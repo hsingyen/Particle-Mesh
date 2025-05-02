@@ -1,6 +1,6 @@
 # Particle Mesh Simulation for 3D Self-Gravitating Systems
 
-This project implements a 3D Particle Mesh (PM) simulation for modeling the gravitational evolution of particles in a periodic cubic domain. It is developed as part of the final project for a Computational Astrophysics course. The code uses FFT-based solvers to compute the gravitational potential, supports multiple mass deposition schemes, and includes basic symplectic integrators for evolving particle orbits.
+This project implements a 3D Particle Mesh (PM) simulation for modeling the gravitational evolution of particles in a periodic cubic domain. The code uses FFT-based solvers to compute the gravitational potential, supports multiple mass deposition schemes, and includes basic symplectic integrators for evolving particle orbits.
 
 ---
 
@@ -27,19 +27,17 @@ This project implements a 3D Particle Mesh (PM) simulation for modeling the grav
 
 ## Directory Structure
 
-ComputationalAstrophysics_FinalProject/
-│
-├── src/                 # Main simulation code
-│   ├── main.py
-│   ├── poisson_solver.py
-│   ├── mass_deposition.py
-│   ├── orbit_integrator.py
-│   └── utils.py
-│
-├── animations/          # Saved .mp4 or .gif animations
-├── results/             # Plots (e.g. energy, momentum)
-├── data/                # (Optional) Raw output arrays
-├── notebook/            # Jupyter notebooks (optional)
-├── requirements.txt     # Python dependencies
-├── .gitignore           # Ignore .pyc, outputs, cache
-└── README.md            # Project overview
+ComputationalAstrophysics_FinalProject/  
+├── src/                   # Main simulation code  
+│    ├── main.py  
+│    ├── poisson_solver.py  
+│    ├── mass_deposition.py  
+│    ├── orbit_integrator.py  
+│    └── utils.py  
+├── animations/            # Output animations (.mp4 or .gif)  
+├── results/               # Energy plots, momentum plots, etc.  
+├── data/                  # Optional: saved simulation state  
+├── notebook/              # Jupyter notebooks (optional)  
+├── requirements.txt       # Python dependencies  
+├── .gitignore             # Files to exclude from Git  
+└── README.md              # Project description  
