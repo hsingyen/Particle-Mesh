@@ -10,10 +10,10 @@ from mpl_toolkits.mplot3d import Axes3D
 # === Simulation parameters ===
 N = 64  # Grid size: N x N x N
 box_size = 1.0
-N_particles = 1000
+N_particles =  10000 #10000
 center = N // 2
 dt = 0.01
-n_steps = 100
+n_steps = 100  #200
 deposition_scheme = 'cic'  # 'ngp', 'cic', or 'tsc'
 integrator = 'kdk'         # 'kdk' or 'dkd'
 
@@ -55,6 +55,9 @@ def compute_total_energy(positions, velocities, masses, phi, N, box_size):
     PE = 0.5 * np.sum(masses * potential)
     return KE, PE
 
+def compute_total_momentum(velocities, masses):
+    """Compute momentum (vector)"""
+    return np.sum(masses[:, None] * velocities, axis=0)
 
 def compute_particle_density(positions, N, box_size):
     """Compute 2D density field by counting particles per (x,y) grid cell."""
@@ -94,6 +97,10 @@ def main():
     # --- Time-evolution simulation ---
     positions, velocities, masses = create_random_particles(N_particles, box_size)
 
+    initial_momentum = compute_total_momentum(velocities, masses)
+    momentum_errors = []         # total error ||ΔP||
+    momentum_errors_xyz = []     # per-axis error [|ΔPx|, |ΔPy|, |ΔPz|]
+
     frames = []           # potential field frames
     particle_frames = []  # particle position frames
     energies = []
@@ -115,6 +122,12 @@ def main():
         KE, PE = compute_total_energy(positions, velocities, masses, phi, N, box_size)
         energies.append((KE, PE))
 
+        # Momentum conservation check
+        total_momentum = compute_total_momentum(velocities, masses)
+        delta_p = total_momentum - initial_momentum
+        momentum_errors.append(np.linalg.norm(delta_p))
+        momentum_errors_xyz.append(np.abs(delta_p))
+
         # Save frames every 2 steps
         if step % 2 == 0:
             frames.append(phi[:,:,center].copy())
@@ -133,8 +146,10 @@ def main():
 
     # --- Potential Field Animation ---
     fig, ax = plt.subplots()
-    im = ax.imshow(frames[0], extent=[0, box_size, 0, box_size], origin='lower',
-                   vmin=np.min(frames[0]), vmax=np.max(frames[0]))
+    im = ax.imshow(frames[0].T, extent=[0, box_size, 0, box_size],
+                              origin='lower', cmap='viridis')
+    cbar_potential = plt.colorbar(im, ax=ax)      # add color bar
+    cbar_potential.set_label("Gravitational Potential")
     title = ax.set_title(f"Potential at Frame 0")
     ax.set_xlabel("x")
     ax.set_ylabel("y")
@@ -147,12 +162,12 @@ def main():
         title.set_text(f"Potential at Frame {i}")
         return [im, title]
 
-    ani = animation.FuncAnimation(fig, animate_potential, frames=len(frames), interval=100, blit=False)
+    ani = animation.FuncAnimation(fig, animate_potential, frames=len(frames), interval=200, blit=False)
     plt.show()
 
     # --- Particle Motion Animation ---
     fig2, ax2 = plt.subplots()
-    scatter = ax2.scatter(particle_frames[0][:,0], particle_frames[0][:,1], s=1)
+    scatter = ax2.scatter(particle_frames[0][:,0], particle_frames[0][:,1], s=0.5)
     ax2.set_xlim(0, box_size)
     ax2.set_ylim(0, box_size)
     ax2.set_xlabel("x")
@@ -162,17 +177,21 @@ def main():
 
     def animate_particles(i):
         scatter.set_offsets(particle_frames[i])
-        title2.set_text(f"Particles at Frame {i}")
+        error = momentum_errors[i * 2]  # save 1 frame every 2 steps but compute momentum every step
+        title2.set_text(f"Particle at Frame {i} | Momentum Error: {error:.2e}")
+        #title2.set_text(f"Particles at Frame {i}")
         return scatter, title2
 
-    ani_particles = animation.FuncAnimation(fig2, animate_particles, frames=len(particle_frames), interval=100, blit=False)
+    ani_particles = animation.FuncAnimation(fig2, animate_particles, frames=len(particle_frames), interval=200, blit=False)
     plt.show()
 
     # --- Combined Potential + Particles Animation ---
     fig3, ax3 = plt.subplots()
     im = ax3.imshow(frames[0], extent=[0, box_size, 0, box_size], origin='lower',
                     vmin=np.min(frames[0]), vmax=np.max(frames[0]), cmap='viridis')
-    scatter = ax3.scatter(particle_frames[0][:,0], particle_frames[0][:,1], s=1, color='white')
+    cbar_potential = plt.colorbar(im, ax=ax3)    # add color bar
+    cbar_potential.set_label("Gravitational Potential")
+    scatter = ax3.scatter(particle_frames[0][:,0], particle_frames[0][:,1], s=0.5, color='white')
 
     ax3.set_xlim(0, box_size)
     ax3.set_ylim(0, box_size)
@@ -187,7 +206,7 @@ def main():
         title3.set_text(f"Particles + Potential at Frame {i}")
         return im, scatter, title3
 
-    ani_combined = animation.FuncAnimation(fig3, animate_combined, frames=len(frames), interval=100, blit=False)
+    ani_combined = animation.FuncAnimation(fig3, animate_combined, frames=len(frames), interval=200, blit=False)
     plt.show()
 
     # --- Particle Density Field Animation ---
@@ -203,7 +222,7 @@ def main():
         title4.set_text(f"Particle Density at Frame {i}")
         return im_density, title4
 
-    ani_density = animation.FuncAnimation(fig4, animate_density, frames=len(density_frames), interval=100, blit=False)
+    ani_density = animation.FuncAnimation(fig4, animate_density, frames=len(density_frames), interval=200, blit=False)
 
     plt.show()
 
@@ -227,7 +246,7 @@ def main():
         #ax5.view_init(elev=30., azim=i)
         return scatter3d, title5
 
-    ani_particles_3d = animation.FuncAnimation(fig5, animate_particles_3d, frames=len(particle_frames), interval=100, blit=False)
+    ani_particles_3d = animation.FuncAnimation(fig5, animate_particles_3d, frames=len(particle_frames), interval=200, blit=False)
 
     plt.show()
 
@@ -245,6 +264,20 @@ def main():
     plt.xlabel("Step")
     plt.ylabel("Energy")
     plt.title("Energy Conservation Test")
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+    # ---Momentum conservation plot ---
+    momentum_errors_xyz = np.array(momentum_errors_xyz)  # shape: (n_steps, 3)
+
+    plt.figure()
+    plt.plot(momentum_errors_xyz[:, 0], label='|ΔP_x|')
+    plt.plot(momentum_errors_xyz[:, 1], label='|ΔP_y|')
+    plt.plot(momentum_errors_xyz[:, 2], label='|ΔP_z|')
+    plt.xlabel("Step")
+    plt.ylabel("Momentum Error")
+    plt.title("Momentum Conservation Error per Component")
     plt.legend()
     plt.grid()
     plt.show()
