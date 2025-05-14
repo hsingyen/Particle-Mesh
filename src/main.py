@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from poisson_solver import poisson_solver_periodic
 from mass_deposition import deposit_ngp, deposit_cic, deposit_tsc
-from orbit_integrator import kdk_step, dkd_step
+from orbit_integrator import kdk_step, dkd_step, hermite_step_fixed, hermite_individual_step,rk4_step
 from utils import Timer  # optional
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -15,7 +15,7 @@ center = N // 2
 dt = 0.01
 n_steps = 100  #200
 deposition_scheme = 'cic'  # 'ngp', 'cic', or 'tsc'
-integrator = 'kdk'         # 'kdk' or 'dkd'
+integrator = 'rk4'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
 
 # === Utility functions ===
 def create_point_mass(N):
@@ -140,6 +140,60 @@ def main():
             positions, velocities = kdk_step(positions, velocities, masses, dt, phi, N, box_size)
         elif integrator == 'dkd':
             positions, velocities = dkd_step(positions, velocities, masses, dt, phi, N, box_size)
+        elif integrator == 'rk4':
+            positions, velocities = rk4_step(positions, velocities, masses, dt, phi, N, box_size)
+        
+        
+        elif integrator == 'hermite_fixed':
+            # Convert particle data into dictionaries
+            particles = []
+            for i in range(len(positions)):
+                particles.append({
+                    'r': positions[i],
+                    'v': velocities[i],
+                    'a': np.zeros(3),
+                    'j': np.zeros(3),
+                    'm': masses[i],
+                    'dt': dt  # fixed time step
+                })
+
+            if step == 0:
+                from orbit_integrator import compute_force_and_jerk
+                for i in range(len(particles)):
+                    a, j = compute_force_and_jerk(i, particles)
+                    particles[i]['a'] = a
+                    particles[i]['j'] = j
+
+            particles = hermite_step_fixed(particles, G=1.0)
+            positions = np.array([p['r'] for p in particles])
+            velocities = np.array([p['v'] for p in particles])
+
+        elif integrator == 'hermite_individual':
+            # Do a single step for the next-to-update particle
+            if step == 0:
+                particles = []
+                for i in range(len(positions)):
+                    particles.append({
+                        'r': positions[i],
+                        'v': velocities[i],
+                        'a': np.zeros(3),
+                        'j': np.zeros(3),
+                        't': 0.0,
+                        'dt': dt,
+                        'm': masses[i]
+                    })
+
+                from orbit_integrator import compute_force_and_jerk, predict_all
+                predicted = predict_all(particles, 0.0)
+                for i in range(len(particles)):
+                    a, j = compute_force_and_jerk(i, predicted)
+                    particles[i]['a'] = a
+                    particles[i]['j'] = j
+
+            hermite_individual_step(particles)
+            positions = np.array([p['r'] for p in particles])
+            velocities = np.array([p['v'] for p in particles])
+
         else:
             raise ValueError("Unknown integrator!")
 
