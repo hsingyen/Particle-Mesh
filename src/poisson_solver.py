@@ -39,11 +39,6 @@ def poisson_solver_periodic(rho, box_size, G=1.0):
     phi = np.real(fft.ifftn(phi_k))
     return phi
 
-
-
-
-
-
 # ---------------------------------------------------------------------
 #  extra solver: same name + extra kwarg keeps old calls working
 # ---------------------------------------------------------------------
@@ -67,3 +62,53 @@ def poisson_solver_periodic_safe(rho, box_size, G=1.0, soft_len=0.0):
     phi_k[0, 0, 0] = 0.0                     # mean(φ)=0
 
     return np.fft.ifftn(phi_k).real
+
+
+### I define green=0 at r=0, maybe adding a softening will be better?
+def poisson_solver_isolated(rho, box_size, G=1.0):
+    """
+    Solve Poisson equation with isolated boundary conditions using FFT-based convolution.
+
+    Parameters
+    ----------
+    rho : ndarray
+        3D array of mass density
+    box_size : float
+        Physical size of the simulation box
+    G : float
+        Gravitational constant (default 1)
+
+    Returns
+    -------
+    phi : ndarray
+        3D array of potential (same size as input rho)
+    """
+    N = rho.shape[0]  # assume cube
+    L = box_size
+    dx = L / N
+
+    # Pad to 2N to avoid wrap-around
+    N2 = 2 * N
+    rho_pad = np.zeros((N2, N2, N2))
+    rho_pad[:N, :N, :N] = rho
+
+    # Create Green's function in real space: 1 / |r|
+    x = np.arange(-N, N) * dx
+    y = np.arange(-N, N) * dx
+    z = np.arange(-N, N) * dx
+    X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+    r = np.sqrt(X**2 + Y**2 + Z**2)
+    green = np.zeros_like(r)
+    with np.errstate(divide='ignore'):
+        green[r > 0] = 1.0 / r[r > 0]
+        green[r == 0] = 0  # avoid singularity at r = 0
+
+    # Convolution via FFT
+    rho_k = fft.fftn(rho_pad)
+    green_k = fft.fftn(fft.ifftshift(green))  # shift Green's function
+    phi_k = -G * rho_k * green_k
+    phi_pad = np.real(fft.ifftn(phi_k))
+
+    # Extract the central region
+    phi = phi_pad[:N, :N, :N]
+    return phi

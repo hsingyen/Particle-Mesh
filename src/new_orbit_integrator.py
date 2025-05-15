@@ -1,6 +1,7 @@
 import numpy as np
 from itertools import product
-from poisson_solver import poisson_solver_periodic_safe, poisson_solver_periodic 
+from poisson_solver import poisson_solver_periodic_safe, poisson_solver_periodic,poisson_solver_isolated
+from mass_deposition import deposit_cic,deposit_ngp,deposit_tsc
 
 ### acc: compute grid acc => back to particle by weighting => update scheme
 
@@ -44,97 +45,81 @@ def interpolate_to_particles(grid_field, weights_list):
 
     return np.array(particle_values)
 
-def kdk_step(positions, velocities, masses, dt, phi, N, box_size):
+def compute_acceleration(positions, masses, N, box_size, dp,solver):
     """
-    Perform one KDK (Kick-Drift-Kick) integration step.
+    Computes particle accelerations from positions and masses via:
+    1. Mass deposition
+    2. Solving Poisson equation
+    3. Compute grid acceleration
+    4. Interpolate acceleration back to particles
+    """
+    # Step 1: Mass deposition
+    if dp == "ngp":
+        rho, weights = deposit_ngp(positions, masses, N, box_size,solver)
+    elif dp == "cic":
+        rho, weights = deposit_cic(positions, masses, N, box_size,solver)
+    elif dp == "tsc":
+        rho, weights = deposit_tsc(positions, masses, N, box_size,solver)
+    else:
+        raise ValueError("Unknown deposition method")
 
-    Parameters
-    ----------
-    positions : ndarray
-        (N_particles, 3) particle positions
-    velocities : ndarray
-        (N_particles, 3) particle velocities
-    masses : ndarray
-        (N_particles,) particle masses (not used here yet, but keep for later)
-    dt : float
-        Time step
-    phi : ndarray
-        (N, N, N) gravitational potential
-    N : int
-        Grid size
-    box_size : float
-        Physical size of box
+    # Step 2: Solve Poisson equation
+    if solver == "periodic":
+        phi = poisson_solver_periodic(rho, box_size, G=1.0)
+    elif solver == "isolated":
+        phi = poisson_solver_isolated(rho, box_size, G=1.0)
+    else:
+        raise ValueError("Unknown boundary condition")
 
-    Returns
-    -------
-    positions, velocities : ndarray
-        Updated particle positions and velocities
+    # Step 3: Compute grid acceleration
+    acc_grid = compute_grid_acceleration(phi,N, box_size)
+
+    # Step 4: Interpolate to particles
+    acc_particles = interpolate_to_particles(acc_grid, weights)
+    acc_particles = np.array(acc_particles)
+
+    return acc_particles,phi
+
+
+def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver ):
+    """
+    Perform one KDK (Kick-Drift-Kick) integration step with full acceleration computation.
     """
     # First Kick (half step)
-    acc = compute_acceleration(positions, phi, N, box_size)
+    acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver)
     velocities += 0.5 * dt * acc
 
     # Drift (full step)
     positions += dt * velocities
     positions %= box_size  # periodic boundary condition
 
-    # Recompute potential here if needed (optional for simplicity now)
-    # Assuming phi is static during dt
-
     # Second Kick (half step)
-    acc = compute_acceleration(positions, phi, N, box_size)
+    acc = compute_acceleration(positions, masses, N, box_size, G, method, boundary)
     velocities += 0.5 * dt * acc
 
-    return positions, velocities
+    return positions, velocities,phi
 
 
-def dkd_step(positions, velocities, masses, dt, phi, N, box_size):
+def dkd_step(positions, velocities, masses, dt, N, box_size, G, method, boundary):
     """
-    Perform one DKD (Drift-Kick-Drift) integration step.
-
-    Parameters
-    ----------
-    positions : ndarray
-        (N_particles, 3) particle positions
-    velocities : ndarray
-        (N_particles, 3) particle velocities
-    masses : ndarray
-        (N_particles,) particle masses (not used here yet)
-    dt : float
-        Time step
-    phi : ndarray
-        (N, N, N) gravitational potential
-    N : int
-        Grid size
-    box_size : float
-        Physical size of box
-
-    Returns
-    -------
-    positions, velocities : ndarray
-        Updated particle positions and velocities
+    Perform one DKD (Drift-Kick-Drift) integration step with acceleration computation.
     """
-    dx = box_size / N
-
     # First Drift (half step)
     positions += 0.5 * dt * velocities
-    positions %= box_size  # Apply periodic boundary condition
+    positions %= box_size  # periodic boundary condition
 
-    # Compute acceleration at mid positions
-    acc = compute_acceleration(positions, phi, N, box_size)
+    # Compute acceleration at updated positions
+    acc,phi = compute_acceleration(positions, masses, N, box_size, G, method, boundary)
 
-    # Full Kick
+    # Kick (full step)
     velocities += dt * acc
 
     # Second Drift (half step)
     positions += 0.5 * dt * velocities
-    positions %= box_size  # Apply periodic boundary condition again
+    positions %= box_size  # periodic boundary condition
 
-    return positions, velocities
+    return positions, velocities, phi
 
-
-import numpy as np
-from poisson_solver import poisson_solver_periodic_safe
 
 
 # ---------------------------------------------------------------------
