@@ -60,18 +60,6 @@ def compute_total_momentum(velocities, masses):
     """Compute momentum (vector)"""
     return np.sum(masses[:, None] * velocities, axis=0)
 
-def compute_particle_density(positions, N, box_size):
-    """Compute 2D density field by counting particles per (x,y) grid cell."""
-    density = np.zeros((N, N))
-    dx = box_size / N
-
-    for pos in positions:
-        ix = int(pos[0] / dx) % N
-        iy = int(pos[1] / dx) % N
-        density[ix, iy] += 1
-
-    return density
-
 # === Main Simulation ===
 def main():
     np.random.seed(42)
@@ -90,13 +78,18 @@ def main():
         # Orbit integration
         ## change input parameter
         if integrator == 'kdk':
-            positions, velocities = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver )
+            positions, velocities,phi = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver )
         elif integrator == 'dkd':
-            positions, velocities = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver)
+            positions, velocities,phi = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver)
         elif integrator == 'rk4':
-            positions, velocities = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver)
+            positions, velocities.phi = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver)
         
         # add hermite scheme
+
+        # Save frames every 2 steps
+        if step % 2 == 0:
+            frames.append(phi[:,:,center].copy())
+            particle_frames.append(positions.copy())
     
     # --- Combined Potential + Particles Animation ---
     fig3, ax3 = plt.subplots()

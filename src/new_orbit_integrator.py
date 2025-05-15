@@ -1,48 +1,48 @@
 import numpy as np
 from itertools import product
-from poisson_solver import poisson_solver_periodic_safe
+from poisson_solver import poisson_solver_periodic_safe, poisson_solver_periodic 
 
-def compute_acceleration(positions, phi, N, box_size):
-    """
-    Compute gravitational acceleration -grad(phi) at particle positions.
-    Use nearest-grid interpolation for now (simple NGP).
+### acc: compute grid acc => back to particle by weighting => update scheme
 
-    Parameters
-    ----------
-    positions : ndarray
-        (N_particles, 3) array of particle positions.
-    phi : ndarray
-        (N, N, N) gravitational potential on the grid.
-    N : int
-        Grid size.
-    box_size : float
-        Physical size of the box.
-
-    Returns
-    -------
-    accelerations : ndarray
-        (N_particles, 3) array of particle accelerations.
-    """
+def compute_grid_acceleration( phi, N, box_size):
+    """ compute acceleration at grids"""
     dx = box_size / N
-    accelerations = np.zeros_like(positions)
-
     # Compute gradients on the grid (finite differences)
     grad_phi = np.gradient(phi, dx, edge_order=2)  # returns [grad_phi_x, grad_phi_y, grad_phi_z]
 
-    for i, pos in enumerate(positions):
-        # Find nearest grid point
-        ix = int(np.round(pos[0] / dx)) % N
-        iy = int(np.round(pos[1] / dx)) % N
-        iz = int(np.round(pos[2] / dx)) % N
+    return grad_phi
 
-        # Acceleration is -gradient of potential
-        ax = -grad_phi[0][ix, iy, iz]
-        ay = -grad_phi[1][ix, iy, iz]
-        az = -grad_phi[2][ix, iy, iz]
+"""make inverse interpolation for particle"""
 
-        accelerations[i] = np.array([ax, ay, az])
+def interpolate_to_particles(grid_field, weights_list):
+    """
+    Interpolate grid field (scalar or vector) back to particle positions using precomputed weights.
 
-    return accelerations
+    Parameters
+    ----------
+    grid_field : ndarray
+        Grid values, shape (N, N, N) or (3, N, N, N) for vector field (e.g., acceleration).
+    weights_list : list of list of (index tuple, weight)
+        Each entry corresponds to a particle's interpolation stencil.
+
+    Returns
+    -------
+    particle_values : ndarray
+        Interpolated values at particle positions. Shape:
+        - (N_particles,) for scalar field
+        - (N_particles, 3) for vector field
+    """
+    particle_values = []
+
+    for weights in weights_list:
+        acc = np.zeros(3)
+        for idx, w in weights:
+            acc[0] += grid_field[0][idx] * w
+            acc[1] += grid_field[1][idx] * w
+            acc[2] += grid_field[2][idx] * w
+        particle_values.append(acc)
+
+    return np.array(particle_values)
 
 def kdk_step(positions, velocities, masses, dt, phi, N, box_size):
     """
