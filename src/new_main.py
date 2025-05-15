@@ -2,20 +2,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from poisson_solver import poisson_solver_periodic
-from mass_deposition import deposit_ngp, deposit_cic, deposit_tsc
-from orbit_integrator import kdk_step, dkd_step, hermite_step_fixed, hermite_individual_step,rk4_step
+from new_mass_deposition import deposit_ngp, deposit_cic, deposit_tsc
+from new_orbit_integrator import kdk_step, dkd_step, hermite_step_fixed, hermite_individual_step,rk4_step
 from utils import Timer  # optional
 from mpl_toolkits.mplot3d import Axes3D
 
 # === Simulation parameters ===
 N = 64  # Grid size: N x N x N
 box_size = 1.0
-N_particles =  10000 #10000
+N_particles =  10 #10000
 center = N // 2
 dt = 0.01
 n_steps = 100  #200
-deposition_scheme = 'cic'  # 'ngp', 'cic', or 'tsc'
-integrator = 'rk4'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
+dp = 'cic'  # 'ngp', 'cic', or 'tsc'
+solver = 'isolated' # 'isolated', 'periodic ,'periodic_safe'
+integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
 
 # === Utility functions ===
 def create_point_mass(N):

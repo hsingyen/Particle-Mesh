@@ -1,7 +1,7 @@
 import numpy as np
 from itertools import product
 from poisson_solver import poisson_solver_periodic_safe, poisson_solver_periodic,poisson_solver_isolated
-from mass_deposition import deposit_cic,deposit_ngp,deposit_tsc
+from new_mass_deposition import deposit_cic,deposit_ngp,deposit_tsc
 
 ### acc: compute grid acc => back to particle by weighting => update scheme
 
@@ -68,6 +68,8 @@ def compute_acceleration(positions, masses, N, box_size, dp,solver):
         phi = poisson_solver_periodic(rho, box_size, G=1.0)
     elif solver == "isolated":
         phi = poisson_solver_isolated(rho, box_size, G=1.0)
+    elif solver == "periodic_safe":
+        phi = poisson_solver_periodic_safe(rho, box_size, G=1.0)
     else:
         raise ValueError("Unknown boundary condition")
 
@@ -94,13 +96,13 @@ def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver ):
     positions %= box_size  # periodic boundary condition
 
     # Second Kick (half step)
-    acc = compute_acceleration(positions, masses, N, box_size, G, method, boundary)
+    acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver)
     velocities += 0.5 * dt * acc
 
     return positions, velocities,phi
 
 
-def dkd_step(positions, velocities, masses, dt, N, box_size, G, method, boundary):
+def dkd_step(positions, velocities, masses, dt, N, box_size, dp,solver):
     """
     Perform one DKD (Drift-Kick-Drift) integration step with acceleration computation.
     """
@@ -109,7 +111,7 @@ def dkd_step(positions, velocities, masses, dt, N, box_size, G, method, boundary
     positions %= box_size  # periodic boundary condition
 
     # Compute acceleration at updated positions
-    acc,phi = compute_acceleration(positions, masses, N, box_size, G, method, boundary)
+    acc,phi = compute_acceleration(positions, masses, N, box_size, dp,solver)
 
     # Kick (full step)
     velocities += dt * acc
