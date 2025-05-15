@@ -16,6 +16,7 @@ def deposit_ngp(positions, masses, N, box_size, boundary):
             ix %= N
             iy %= N
             iz %= N
+            rho[ix, iy, iz] += m / dx**3
         elif boundary == 'isolated':
             if 0 <= ix < N and 0 <= iy < N and 0 <= iz < N:
                 rho[ix, iy, iz] += m / dx**3
@@ -116,12 +117,21 @@ def deposit_tsc(positions, masses, N, box_size, boundary):
         for dx_idx in range(-1, 2):
             for dy_idx in range(-1, 2):
                 for dz_idx in range(-1, 2):
-                    i = (ix + dx_idx) % N
-                    j = (iy + dy_idx) % N
-                    k = (iz + dz_idx) % N
+                    i = ix + dx_idx
+                    j = iy + dy_idx
+                    k = iz + dz_idx
                     weight = wx[dx_idx+1] * wy[dy_idx+1] * wz[dz_idx+1]
-                    rho[i, j, k] += m * weight / dx**3
-                    particle_weights.append(((i, j, k), weight))  # NEW
+
+                    if boundary == 'periodic':
+                        i %= N
+                        j %= N
+                        k %= N
+                        rho[i, j, k] += m * weight / dx**3
+                        particle_weights.append(((i, j, k), weight))
+                    elif boundary == 'isolated':
+                        if 0 <= i < N and 0 <= j < N and 0 <= k < N:
+                            rho[i, j, k] += m * weight / dx**3
+                            particle_weights.append(((i, j, k), weight))
 
         weights_list.append(particle_weights)  # NEW
 

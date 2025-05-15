@@ -8,14 +8,14 @@ from utils import Timer  # optional
 from mpl_toolkits.mplot3d import Axes3D
 
 # === Simulation parameters ===
-N = 64  # Grid size: N x N x N
+N = 32  # Grid size: N x N x N
 box_size = 1.0
-N_particles =  10 #10000
+N_particles =  100 #10000
 center = N // 2
-dt = 0.01
+dt = 0.0001
 n_steps = 100  #200
 dp = 'cic'  # 'ngp', 'cic', or 'tsc'
-solver = 'isolated' # 'isolated', 'periodic ,'periodic_safe'
+solver = 'periodic' # 'isolated', 'periodic ,'periodic_safe'
 integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
 
 # === Utility functions ===
@@ -66,6 +66,11 @@ def main():
     np.random.seed(42)
     positions, velocities, masses = create_random_particles(N_particles, box_size)
 
+    #print("Position range:", positions.min(), positions.max())
+    #print("Velocity sample:", velocities[:3])
+    #print("Total mass:", masses.sum())
+
+
     initial_momentum = compute_total_momentum(velocities, masses)
     momentum_errors = []         # total error ||ΔP||
     momentum_errors_xyz = []     # per-axis error [|ΔPx|, |ΔPy|, |ΔPz|]
@@ -79,11 +84,11 @@ def main():
         # Orbit integration
         ## change input parameter
         if integrator == 'kdk':
-            positions, velocities,phi = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver )
+            positions, velocities,phi = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=True)
         elif integrator == 'dkd':
             positions, velocities,phi = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver)
         elif integrator == 'rk4':
-            positions, velocities.phi = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver)
+            positions, velocities,phi = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver)
         
         # add hermite scheme
 
@@ -96,6 +101,15 @@ def main():
         delta_P = current_momentum - initial_momentum
         momentum_errors.append(np.linalg.norm(delta_P))
         momentum_errors_xyz.append(np.abs(delta_P))
+
+        print(f"Step {step}")
+        print("  KE =", KE)
+        print("  PE =", PE)
+        print("  Total E =", KE + PE)
+        print("  ΔP =", delta_P)
+        print("  Positions sample:", positions[0])
+        print("  Velocities sample:", velocities[0])
+        print()
 
 
         # Save frames every 2 steps

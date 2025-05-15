@@ -45,7 +45,8 @@ def interpolate_to_particles(grid_field, weights_list):
 
     return np.array(particle_values)
 
-def compute_acceleration(positions, masses, N, box_size, dp,solver):
+#def compute_acceleration(positions, masses, N, box_size, dp, solver):
+def compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self=False):
     """
     Computes particle accelerations from positions and masses via:
     1. Mass deposition
@@ -53,15 +54,19 @@ def compute_acceleration(positions, masses, N, box_size, dp,solver):
     3. Compute grid acceleration
     4. Interpolate acceleration back to particles
     """
+    boundary = 'periodic' if solver.startswith('periodic') else solver
+
     # Step 1: Mass deposition
     if dp == "ngp":
-        rho, weights = deposit_ngp(positions, masses, N, box_size,solver)
+        rho, weights = deposit_ngp(positions, masses, N, box_size, boundary)
     elif dp == "cic":
-        rho, weights = deposit_cic(positions, masses, N, box_size,solver)
+        rho, weights = deposit_cic(positions, masses, N, box_size, boundary)
     elif dp == "tsc":
-        rho, weights = deposit_tsc(positions, masses, N, box_size,solver)
+        rho, weights = deposit_tsc(positions, masses, N, box_size, boundary)
     else:
         raise ValueError("Unknown deposition method")
+    
+    #print("rho min/max:", np.min(rho), np.max(rho))
 
     # Step 2: Solve Poisson equation
     if solver == "periodic":
@@ -74,21 +79,29 @@ def compute_acceleration(positions, masses, N, box_size, dp,solver):
         raise ValueError("Unknown boundary condition")
 
     # Step 3: Compute grid acceleration
-    acc_grid = compute_grid_acceleration(phi,N, box_size)
+    acc_grid = compute_grid_acceleration(phi, N, box_size)
 
     # Step 4: Interpolate to particles
     acc_particles = interpolate_to_particles(acc_grid, weights)
-    acc_particles = np.array(acc_particles)
-
-    return acc_particles,phi
 
 
-def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver ):
+    if subtract_self:
+        # Enforce zero net force to conserve momentum
+        net_force = np.sum(acc_particles * masses[:, np.newaxis], axis=0)
+        correction = net_force / np.sum(masses)
+        acc_particles -= correction
+        print("Subtracted net correction:", correction)
+
+    return acc_particles, phi
+
+
+
+def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=True):
     """
     Perform one KDK (Kick-Drift-Kick) integration step with full acceleration computation.
     """
     # First Kick (half step)
-    acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver)
+    acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self=True)
     velocities += 0.5 * dt * acc
 
     # Drift (full step)
@@ -96,8 +109,12 @@ def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver ):
     positions %= box_size  # periodic boundary condition
 
     # Second Kick (half step)
-    acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver)
+    acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self=True)
     velocities += 0.5 * dt * acc
+    
+    
+    net_force = np.sum(acc * masses[:, np.newaxis], axis=0)
+    #print("Net force:", net_force)
 
     return positions, velocities,phi
 
