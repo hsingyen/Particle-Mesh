@@ -2,20 +2,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from poisson_solver import poisson_solver_periodic
-from mass_deposition import deposit_ngp, deposit_cic, deposit_tsc
-from orbit_integrator import kdk_step, dkd_step, hermite_step_fixed, hermite_individual_step,rk4_step
+from new_mass_deposition import deposit_ngp, deposit_cic, deposit_tsc
+from new_orbit_integrator import kdk_step, dkd_step, hermite_step_fixed, hermite_individual_step,rk4_step
 from utils import Timer  # optional
 from mpl_toolkits.mplot3d import Axes3D
 
 # === Simulation parameters ===
 N = 64  # Grid size: N x N x N
 box_size = 1.0
-N_particles =  10000 #10000
+N_particles =  10 #10000
 center = N // 2
 dt = 0.01
 n_steps = 100  #200
-deposition_scheme = 'cic'  # 'ngp', 'cic', or 'tsc'
-integrator = 'rk4'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
+dp = 'cic'  # 'ngp', 'cic', or 'tsc'
+solver = 'isolated' # 'isolated', 'periodic ,'periodic_safe'
+integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
 
 # === Utility functions ===
 def create_point_mass(N):
@@ -60,18 +61,6 @@ def compute_total_momentum(velocities, masses):
     """Compute momentum (vector)"""
     return np.sum(masses[:, None] * velocities, axis=0)
 
-def compute_particle_density(positions, N, box_size):
-    """Compute 2D density field by counting particles per (x,y) grid cell."""
-    density = np.zeros((N, N))
-    dx = box_size / N
-
-    for pos in positions:
-        ix = int(pos[0] / dx) % N
-        iy = int(pos[1] / dx) % N
-        density[ix, iy] += 1
-
-    return density
-
 # === Main Simulation ===
 def main():
     np.random.seed(42)
@@ -90,13 +79,18 @@ def main():
         # Orbit integration
         ## change input parameter
         if integrator == 'kdk':
-            positions, velocities = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver )
+            positions, velocities,phi = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver )
         elif integrator == 'dkd':
-            positions, velocities = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver)
+            positions, velocities,phi = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver)
         elif integrator == 'rk4':
-            positions, velocities = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver)
+            positions, velocities.phi = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver)
         
         # add hermite scheme
+
+        # Save frames every 2 steps
+        if step % 2 == 0:
+            frames.append(phi[:,:,center].copy())
+            particle_frames.append(positions.copy())
     
     # --- Combined Potential + Particles Animation ---
     fig3, ax3 = plt.subplots()
