@@ -124,9 +124,9 @@ def dkd_step(positions, velocities, masses, dt, N, box_size, dp,solver):
 
 
 
-# ---------------------------------------------------------------------
-#  fast CIC force interpolation (all-NumPy, no take_along_axis)
-# ---------------------------------------------------------------------
+
+
+#rk4
 def cic_acceleration(positions, phi, box_size):
     N   = phi.shape[0]
     dx  = box_size / N
@@ -166,10 +166,6 @@ def cic_acceleration(positions, phi, box_size):
                     np.sum(w*az,1)), axis=1)
     return acc
 
-
-# ---------------------------------------------------------------------
-#  your integrator – only this function is new/changed
-# ---------------------------------------------------------------------
 def rk4_step(positions, velocities, masses,
              dt, N, box_size,
              deposit_func,

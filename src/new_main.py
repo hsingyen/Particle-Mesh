@@ -87,6 +87,17 @@ def main():
         
         # add hermite scheme
 
+
+        #Energy
+        KE, PE = compute_total_energy(positions, velocities, masses, phi, N, box_size)
+        energies.append([KE, PE])
+        #Momentum
+        current_momentum = compute_total_momentum(velocities, masses)
+        delta_P = current_momentum - initial_momentum
+        momentum_errors.append(np.linalg.norm(delta_P))
+        momentum_errors_xyz.append(np.abs(delta_P))
+
+
         # Save frames every 2 steps
         if step % 2 == 0:
             frames.append(phi[:,:,center].copy())
@@ -98,7 +109,7 @@ def main():
                     vmin=np.min(frames[0]), vmax=np.max(frames[0]), cmap='viridis')
     cbar_potential = plt.colorbar(im, ax=ax3)    # add color bar
     cbar_potential.set_label("Gravitational Potential")
-    scatter = ax3.scatter(particle_frames[0][:,0], particle_frames[0][:,1], s=0.5, color='white')
+    scatter = ax3.scatter(particle_frames[0][:,0], particle_frames[0][:,1], s=1, color='white')
 
     ax3.set_xlim(0, box_size)
     ax3.set_ylim(0, box_size)
