@@ -86,9 +86,9 @@ def main():
         if integrator == 'kdk':
             positions, velocities,phi = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=True)
         elif integrator == 'dkd':
-            positions, velocities,phi = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver)
+            positions, velocities,phi = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=True)
         elif integrator == 'rk4':
-            positions, velocities,phi = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver)
+            positions, velocities,phi = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=True)
         
         # add hermite scheme
 
@@ -140,7 +140,6 @@ def main():
 
     ani_combined = animation.FuncAnimation(fig3, animate_combined, frames=len(frames), interval=200, blit=False)
     plt.show()
-
     # --- Energy Conservation Plot ---
     energies = np.array(energies)
     KEs = energies[:,0]
@@ -153,6 +152,15 @@ def main():
     plt.plot(TEs, label="Total Energy")
     plt.xlabel("Step")
     plt.ylabel("Energy")
+    plt.title("Energy Conservation Test")
+    plt.legend()
+    plt.grid()
+    plt.show()
+
+    plt.figure()
+    plt.plot(TEs-TEs[0], label="Delta Total Energy")
+    plt.xlabel("Step")
+    plt.ylabel("Energy diff")
     plt.title("Energy Conservation Test")
     plt.legend()
     plt.grid()
