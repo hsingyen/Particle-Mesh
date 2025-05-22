@@ -1,20 +1,21 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
-from poisson_solver import poisson_solver_periodic
+from matplotlib.animation import PillowWriter
+from poisson_solver import poisson_solver_periodic, poisson_solver_periodic_safe, poisson_solver_isolated
 from new_mass_deposition import deposit_ngp, deposit_cic, deposit_tsc
-from new_orbit_integrator import kdk_step, dkd_step, hermite_step_fixed, hermite_individual_step,rk4_step
+from new_orbit_integrator import kdk_step, dkd_step, hermite_step_fixed, hermite_individual_step,rk4_step,hermite_step_fixed_pm
 from utils import Timer  # optional
 from mpl_toolkits.mplot3d import Axes3D
 
 # === Simulation parameters ===
-N = 32  # Grid size: N x N x N
+N = 64  # Grid size: N x N x N
 box_size = 1.0
-N_particles =  100 #10000
+N_particles =  1000 #10000
 center = N // 2
-dt = 0.0001
-n_steps = 100  #200
-dp = 'cic'  # 'ngp', 'cic', or 'tsc'
+dt = 0.001
+n_steps = 1000  #200
+dp = 'ngp'  # 'ngp', 'cic', or 'tsc'
 solver = 'periodic' # 'isolated', 'periodic ,'periodic_safe'
 integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
 
@@ -28,6 +29,23 @@ def create_point_mass(N):
 def create_random_particles(N_particles, box_size):
     """Generate random particle positions and masses."""
     positions = np.random.rand(N_particles, 3) * box_size
+    velocities = np.zeros((N_particles, 3))
+    masses = np.ones(N_particles) * (1.0 / N_particles)
+    return positions, velocities, masses
+
+# test self-gravity collapse
+def create_random_center_particles(N_particles, box_size):
+    """Generate random particle positions inside a sphere centered in the box."""
+    center = np.array([box_size / 2] * 3)
+    radius = 0.05 * box_size  # Sphere radius
+
+    positions = []
+    while len(positions) < N_particles:
+        point = np.random.uniform(-radius, radius, size=3)
+        if np.linalg.norm(point) <= radius:
+            positions.append(center + point)
+
+    positions = np.array(positions)
     velocities = np.zeros((N_particles, 3))
     masses = np.ones(N_particles) * (1.0 / N_particles)
     return positions, velocities, masses
@@ -64,11 +82,25 @@ def compute_total_momentum(velocities, masses):
 # === Main Simulation ===
 def main():
     np.random.seed(42)
-    positions, velocities, masses = create_random_particles(N_particles, box_size)
-
+    #positions, velocities, masses = create_random_particles(N_particles, box_size)
+    # test self-gravity collapse
+    positions, velocities, masses = create_random_center_particles(N_particles, box_size)
+    fig_init, ax_init = plt.subplots()
+    ax_init.scatter(positions[:, 0], positions[:, 1], s=5, alpha=0.6)
+    circle = plt.Circle((box_size / 2, box_size / 2), 0.05 * box_size, color='r', fill=False, linestyle='--')
+    ax_init.add_patch(circle)
+    ax_init.set_aspect('equal')
+    ax_init.set_xlim(0, box_size)
+    ax_init.set_ylim(0, box_size)
+    ax_init.set_xlabel("x")
+    ax_init.set_ylabel("y")
+    ax_init.set_title("Initial Particle Positions (XY Plane)")
+    plt.tight_layout()
+    plt.show()
     #print("Position range:", positions.min(), positions.max())
     #print("Velocity sample:", velocities[:3])
     #print("Total mass:", masses.sum())
+
 
 
     initial_momentum = compute_total_momentum(velocities, masses)
@@ -78,7 +110,7 @@ def main():
     frames = []           # potential field frames
     particle_frames = []  # particle position frames
     energies = []
-    density_frames = []
+    saved_frames = set()
 
     for step in range(n_steps):
         # Orbit integration
@@ -89,6 +121,8 @@ def main():
             positions, velocities,phi = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver)
         elif integrator == 'rk4':
             positions, velocities,phi = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver)
+        elif integrator == 'hermite_fixed':
+            positions, velocities,phi = hermite_step_fixed_pm(positions, velocities, masses, dt, N, box_size, dp, solver)
         
         # add hermite scheme
 
@@ -102,14 +136,13 @@ def main():
         momentum_errors.append(np.linalg.norm(delta_P))
         momentum_errors_xyz.append(np.abs(delta_P))
 
-        print(f"Step {step}")
-        print("  KE =", KE)
-        print("  PE =", PE)
-        print("  Total E =", KE + PE)
-        print("  ΔP =", delta_P)
-        print("  Positions sample:", positions[0])
-        print("  Velocities sample:", velocities[0])
-        print()
+        #print(f"Step {step}")
+        #print("  KE =", KE)
+        #print("  PE =", PE)
+        #print("  ΔP =", delta_P)
+        #print("  Positions sample:", positions[0])
+        #print("  Velocities sample:", velocities[0])
+        #print()
 
 
         # Save frames every 2 steps
@@ -137,9 +170,10 @@ def main():
         scatter.set_offsets(particle_frames[i])
         title3.set_text(f"Particles + Potential at Frame {i}")
         return im, scatter, title3
-
+    
     ani_combined = animation.FuncAnimation(fig3, animate_combined, frames=len(frames), interval=200, blit=False)
     plt.show()
+    ani_combined.save("particle_simulation.gif", writer=PillowWriter(fps=5))
 
     # --- Energy Conservation Plot ---
     energies = np.array(energies)
