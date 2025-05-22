@@ -9,7 +9,7 @@ def compute_grid_acceleration( phi, N, box_size):
     """ compute acceleration at grids"""
     dx = box_size / N
     # Compute gradients on the grid (finite differences)
-    grad_phi = np.gradient(phi, dx, edge_order=2)  # returns [grad_phi_x, grad_phi_y, grad_phi_z]
+    grad_phi = np.gradient(-phi, dx, edge_order=2)  # returns [grad_phi_x, grad_phi_y, grad_phi_z]
 
     return grad_phi
 
@@ -46,7 +46,7 @@ def interpolate_to_particles(grid_field, weights_list):
     return np.array(particle_values)
 
 #def compute_acceleration(positions, masses, N, box_size, dp, solver):
-def compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self=False):
+def compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self):
     """
     Computes particle accelerations from positions and masses via:
     1. Mass deposition
@@ -90,18 +90,18 @@ def compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_se
         net_force = np.sum(acc_particles * masses[:, np.newaxis], axis=0)
         correction = net_force / np.sum(masses)
         acc_particles -= correction
-        print("Subtracted net correction:", correction)
+        #print("Subtracted net correction:", correction)
 
     return acc_particles, phi
 
 
 
-def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=True):
+def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=False):
     """
     Perform one KDK (Kick-Drift-Kick) integration step with full acceleration computation.
     """
     # First Kick (half step)
-    acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self=True)
+    acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self)
     velocities += 0.5 * dt * acc
 
     # Drift (full step)
@@ -109,7 +109,7 @@ def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtrac
     positions %= box_size  # periodic boundary condition
 
     # Second Kick (half step)
-    acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self=True)
+    acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self)
     velocities += 0.5 * dt * acc
     
     
@@ -391,3 +391,42 @@ def hermite_step_fixed(particles, G=1.0):
         p['j'] = j_new
 
     return particles
+
+def hermite_step_fixed_pm(particles, N, box_size, dp, solver, subtract_self=False, G=1.0):
+    
+    dt = particles[0]['dt']  
+    positions = np.array([p['r'] for p in particles])
+    masses = np.array([p['m'] for p in particles])
+
+    # 1. Predict
+    for p in particles:
+        p['r_pred'] = p['r'] + p['v'] * dt + 0.5 * p['a'] * dt**2 + (1/6) * p['j'] * dt**3
+        p['v_pred'] = p['v'] + p['a'] * dt + 0.5 * p['j'] * dt**2
+
+    # 2.  (PM) acc
+    pred_positions = np.array([p['r_pred'] for p in particles])
+    a_new, phi = compute_acceleration(pred_positions, masses, N, box_size, dp, solver, subtract_self)
+
+    # 3. jerk = (a_new - a_old)/dt
+    for i, p in enumerate(particles):
+        p['j_new'] = (a_new[i] - p['a']) / dt
+
+    # 4. Correct
+    for i, p in enumerate(particles):
+        r_pred = p['r_pred']
+        v_pred = p['v_pred']
+        a_old = p['a']
+        j_old = p['j']
+        a_new_i = a_new[i]
+        j_new_i = p['j_new']
+
+        p['r'] = r_pred + (1/24) * (a_new_i - a_old) * dt**2 + (1/120) * (j_new_i - j_old) * dt**3
+        p['v'] = v_pred + (1/6) * (a_new_i - a_old) * dt + (1/24) * (j_new_i - j_old) * dt**2
+        p['a'] = a_new_i
+        p['j'] = j_new_i
+        p['t'] += dt
+
+    positions = np.array([p['r'] for p in particles])
+    velocities = np.array([p['v'] for p in particles])
+
+    return positions, velocities, phi
