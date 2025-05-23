@@ -15,7 +15,7 @@ N_particles =  1000 #10000
 center = N // 2
 dt = 0.001
 n_steps = 1000  #200
-dp = 'tsc'  # 'ngp', 'cic', or 'tsc'
+dp = 'ngp'  # 'ngp', 'cic', or 'tsc'
 solver = 'periodic_safe' # 'isolated', 'periodic ,'periodic_safe'
 integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
 
