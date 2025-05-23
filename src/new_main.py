@@ -15,8 +15,8 @@ N_particles =  1000 #10000
 center = N // 2
 dt = 0.001
 n_steps = 1000  #200
-dp = 'ngp'  # 'ngp', 'cic', or 'tsc'
-solver = 'periodic' # 'isolated', 'periodic ,'periodic_safe'
+dp = 'tsc'  # 'ngp', 'cic', or 'tsc'
+solver = 'periodic_safe' # 'isolated', 'periodic ,'periodic_safe'
 integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
 
 # === Utility functions ===
@@ -173,7 +173,7 @@ def main():
     
     ani_combined = animation.FuncAnimation(fig3, animate_combined, frames=len(frames), interval=200, blit=False)
     plt.show()
-    ani_combined.save("particle_simulation.gif", writer=PillowWriter(fps=5))
+    #ani_combined.save("particle_simulation.gif", writer=PillowWriter(fps=5))
 
     # --- Energy Conservation Plot ---
     energies = np.array(energies)

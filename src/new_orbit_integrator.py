@@ -96,7 +96,7 @@ def compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_se
 
 
 
-def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=False):
+def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self):
     """
     Perform one KDK (Kick-Drift-Kick) integration step with full acceleration computation.
     """

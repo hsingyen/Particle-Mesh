@@ -42,7 +42,7 @@ def poisson_solver_periodic(rho, box_size, G=1.0):
 # ---------------------------------------------------------------------
 #  extra solver: same name + extra kwarg keeps old calls working
 # ---------------------------------------------------------------------
-def poisson_solver_periodic_safe(rho, box_size, G=1.0, soft_len=0.0):
+def poisson_solver_periodic_safe(rho, box_size, G=1.0, soft_len=0.01):
     """
     Solve ∇²φ = 4πG ρ  on a cubic grid with periodic BCs.
     Setting soft_len>0 multiplies the k-space Green’s function by
