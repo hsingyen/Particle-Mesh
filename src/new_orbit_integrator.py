@@ -49,11 +49,35 @@ def interpolate_to_particles(grid_field, weights_list):
 def compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self):
     """
     Computes particle accelerations from positions and masses via:
-    1. Mass deposition
-    2. Solving Poisson equation
-    3. Compute grid acceleration
-    4. Interpolate acceleration back to particles
+    1. Compute potential
+    2. Compute grid acceleration
+    3. Interpolate acceleration back to particles
     """
+    #Step 1: Compute potential
+    phi,weights = compute_phi(positions, masses, N, box_size, dp, solver)
+    # Step 2: Compute grid acceleration
+    acc_grid = compute_grid_acceleration(phi, N, box_size)
+
+    # Step 3: Interpolate to particles
+    acc_particles = interpolate_to_particles(acc_grid, weights)
+
+
+    if subtract_self:
+        # Enforce zero net force to conserve momentum
+        net_force = np.sum(acc_particles * masses[:, np.newaxis], axis=0)
+        correction = net_force / np.sum(masses)
+        acc_particles -= correction
+        print("Subtracted net correction:", correction)
+
+    return acc_particles, phi
+
+def compute_phi(positions, masses, N, box_size, dp, solver):
+    """
+    Solve Poisson equation from positions and masses via:
+    1. Mass deposition
+    2. Solve Poisson equation
+    """
+
     boundary = 'periodic' if solver.startswith('periodic') else solver
 
     # Step 1: Mass deposition
@@ -78,21 +102,8 @@ def compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_se
     else:
         raise ValueError("Unknown boundary condition")
 
-    # Step 3: Compute grid acceleration
-    acc_grid = compute_grid_acceleration(phi, N, box_size)
+    return phi,weights
 
-    # Step 4: Interpolate to particles
-    acc_particles = interpolate_to_particles(acc_grid, weights)
-
-
-    if subtract_self:
-        # Enforce zero net force to conserve momentum
-        net_force = np.sum(acc_particles * masses[:, np.newaxis], axis=0)
-        correction = net_force / np.sum(masses)
-        acc_particles -= correction
-        #print("Subtracted net correction:", correction)
-
-    return acc_particles, phi
 
 
 
@@ -119,7 +130,7 @@ def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtrac
     return positions, velocities,phi
 
 
-def dkd_step(positions, velocities, masses, dt, N, box_size, dp,solver):
+def dkd_step(positions, velocities, masses, dt, N, box_size, dp,solver,subtract_self=True):
     """
     Perform one DKD (Drift-Kick-Drift) integration step with acceleration computation.
     """
@@ -128,7 +139,7 @@ def dkd_step(positions, velocities, masses, dt, N, box_size, dp,solver):
     positions %= box_size  # periodic boundary condition
 
     # Compute acceleration at updated positions
-    acc,phi = compute_acceleration(positions, masses, N, box_size, dp,solver)
+    acc,phi = compute_acceleration(positions, masses, N, box_size, dp,solver,subtract_self)
 
     # Kick (full step)
     velocities += dt * acc
@@ -144,6 +155,7 @@ def dkd_step(positions, velocities, masses, dt, N, box_size, dp,solver):
 
 
 #rk4
+'''
 def cic_acceleration(positions, phi, box_size):
     N   = phi.shape[0]
     dx  = box_size / N
@@ -182,35 +194,31 @@ def cic_acceleration(positions, phi, box_size):
                     np.sum(w*ay,1),
                     np.sum(w*az,1)), axis=1)
     return acc
-
+'''
 def rk4_step(positions, velocities, masses,
              dt, N, box_size,
-             deposit_func,
+             dp, solver,subtract_self,
              soft_len = 0.0,
              G        = 1.0):
     """
     4th-order RK for collision-less gravity on a periodic mesh.
     """
-    def acceleration(pos):
-        rho = deposit_func(pos % box_size, masses, N, box_size)
-        phi = poisson_solver_periodic_safe(rho, box_size,
-                                           G=G, soft_len=soft_len)
-        return cic_acceleration(pos, phi, box_size)
+    
 
     # RK4 stages
-    a1  = acceleration(positions)
+    a1 ,phi = compute_acceleration(positions, masses, N, box_size, dp,solver,subtract_self)
     k1x = dt * velocities
     k1v = dt * a1
 
-    a2  = acceleration(positions + 0.5*k1x)
+    a2,phi = compute_acceleration(positions + 0.5*k1x, masses, N, box_size, dp,solver,subtract_self)
     k2x = dt * (velocities + 0.5*k1v)
     k2v = dt * a2
 
-    a3  = acceleration(positions + 0.5*k2x)
+    a3,phi = compute_acceleration(positions + 0.5*k2x, masses, N, box_size, dp,solver,subtract_self)
     k3x = dt * (velocities + 0.5*k2v)
     k3v = dt * a3
 
-    a4  = acceleration(positions + k3x)
+    a4,phi = compute_acceleration(positions + k3x, masses, N, box_size, dp,solver,subtract_self)
     k4x = dt * (velocities + k3v)
     k4v = dt * a4
 
@@ -218,13 +226,9 @@ def rk4_step(positions, velocities, masses,
                (k1x + 2*k2x + 2*k3x + k4x)/6.0) % box_size
     new_vel = velocities + \
               (k1v + 2*k2v + 2*k3v + k4v)/6.0
-    return new_pos, new_vel
-
-
-
-
-
-
+    
+    new_phi,w = compute_phi(new_pos, masses, N, box_size, dp, solver)
+    return new_pos, new_vel, new_phi
 
 
 

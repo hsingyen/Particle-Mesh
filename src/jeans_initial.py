@@ -17,3 +17,6 @@ def plummer_potential_profile(r, G=1.0, M=1.0, a=1.0):
     return -G * M / np.sqrt(r**2 + a**2)
 
 
+
+
+
