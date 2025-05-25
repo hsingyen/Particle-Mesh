@@ -57,7 +57,7 @@ def compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_se
     phi,weights = compute_phi(positions, masses, N, box_size, dp, solver,soft_len)
     # Step 2: Compute grid acceleration
     acc_grid = compute_grid_acceleration(phi, N, box_size)
-
+    
     # Step 3: Interpolate to particles
     acc_particles = interpolate_to_particles(acc_grid, weights)
 
@@ -95,7 +95,7 @@ def compute_phi(positions, masses, N, box_size, dp, solver, soft_len):
     if solver == "periodic":
         phi = poisson_solver_periodic(rho, box_size, G=1.0)
     elif solver == "isolated":
-        phi = poisson_solver_isolated(rho, box_size, G=1.0)
+        phi = poisson_solver_isolated(rho, box_size,soft_len, G=1.0)
     elif solver == "periodic_safe":
         phi = poisson_solver_periodic_safe(rho, box_size, soft_len,G=1.0)
     else:
@@ -110,32 +110,49 @@ def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtrac
     """
     Perform one KDK (Kick-Drift-Kick) integration step with full acceleration computation.
     """
+    boundary = 'periodic' if solver.startswith('periodic') else solver
     # First Kick (half step)
     acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self,soft_len)
     velocities += 0.5 * dt * acc
 
     # Drift (full step)
     positions += dt * velocities
-    positions %= box_size  # periodic boundary condition
+    #positions %= box_size  # periodic boundary condition
+
+    if boundary == "periodic":
+        positions %= box_size
+    elif boundary == "isolated":
+        mask = np.all((positions >= 0) & (positions < box_size), axis=1)
+        positions = positions[mask]
+        velocities = velocities[mask]
+        masses = masses[mask]
 
     # Second Kick (half step)
     acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self,soft_len)
     velocities += 0.5 * dt * acc
     
     
-    net_force = np.sum(acc * masses[:, np.newaxis], axis=0)
+    #net_force = np.sum(acc * masses[:, np.newaxis], axis=0)
     #print("Net force:", net_force)
 
-    return positions, velocities,phi
+    return positions, velocities,masses, phi
 
 
 def dkd_step(positions, velocities, masses, dt, N, box_size, dp,solver,subtract_self, soft_len):
     """
     Perform one DKD (Drift-Kick-Drift) integration step with acceleration computation.
     """
+    boundary = 'periodic' if solver.startswith('periodic') else solver
     # First Drift (half step)
     positions += 0.5 * dt * velocities
-    positions %= box_size  # periodic boundary condition
+    #positions %= box_size  # periodic boundary condition
+    if boundary == "periodic":
+        positions %= box_size
+    elif boundary == "isolated":
+        mask = np.all((positions >= 0) & (positions < box_size), axis=1)
+        positions = positions[mask]
+        velocities = velocities[mask]
+        masses = masses[mask]
 
     # Compute acceleration at updated positions
     acc,phi = compute_acceleration(positions, masses, N, box_size, dp,solver,subtract_self,soft_len)
@@ -145,64 +162,27 @@ def dkd_step(positions, velocities, masses, dt, N, box_size, dp,solver,subtract_
 
     # Second Drift (half step)
     positions += 0.5 * dt * velocities
-    positions %= box_size  # periodic boundary condition
+    #positions %= box_size  # periodic boundary condition
+    if boundary == "periodic":
+        positions %= box_size
+    elif boundary == "isolated":
+        mask = np.all((positions >= 0) & (positions < box_size), axis=1)
+        positions = positions[mask]
+        velocities = velocities[mask]
+        masses = masses[mask]
 
-    return positions, velocities, phi
+    return positions, velocities, masses, phi
 
 
 
 
 
 #rk4
-'''
-def cic_acceleration(positions, phi, box_size):
-    N   = phi.shape[0]
-    dx  = box_size / N
-    inv = 1.0 / dx
-
-    # central-difference gradient on the grid
-    gx = (np.roll(phi, -1, 0) - np.roll(phi, 1, 0)) * (0.5 * inv)
-    gy = (np.roll(phi, -1, 1) - np.roll(phi, 1, 1)) * (0.5 * inv)
-    gz = (np.roll(phi, -1, 2) - np.roll(phi, 1, 2)) * (0.5 * inv)
-
-    gpos = positions * inv
-    i0   = np.floor(gpos).astype(int)      # cell origin
-    d    = gpos - i0                       # fractional offset
-
-    # weights for the 8 vertices of the cell
-    w = np.empty((positions.shape[0], 8))
-    w[:,0] = (1-d[:,0])*(1-d[:,1])*(1-d[:,2])
-    w[:,1] =    d[:,0] *(1-d[:,1])*(1-d[:,2])
-    w[:,2] = (1-d[:,0])*   d[:,1] *(1-d[:,2])
-    w[:,3] = (1-d[:,0])*(1-d[:,1])*   d[:,2]
-    w[:,4] =    d[:,0] *   d[:,1] *(1-d[:,2])
-    w[:,5] =    d[:,0] *(1-d[:,1])*   d[:,2]
-    w[:,6] = (1-d[:,0])*   d[:,1] *   d[:,2]
-    w[:,7] =    d[:,0] *   d[:,1] *   d[:,2]
-
-    shifts = np.array([[0,0,0],[1,0,0],[0,1,0],[0,0,1],
-                       [1,1,0],[1,0,1],[0,1,1],[1,1,1]])
-    ip = (i0[:,None,:] + shifts[None,:,:]) % N        # (Np,8,3)
-
-    # gather –∇φ on the 8 vertices (shape → (Np,8))
-    ax = -gx[ip[:,:,0], ip[:,:,1], ip[:,:,2]]
-    ay = -gy[ip[:,:,0], ip[:,:,1], ip[:,:,2]]
-    az = -gz[ip[:,:,0], ip[:,:,1], ip[:,:,2]]
-
-    acc = np.stack((np.sum(w*ax,1),
-                    np.sum(w*ay,1),
-                    np.sum(w*az,1)), axis=1)
-    return acc
-'''
-def rk4_step(positions, velocities, masses,
-             dt, N, box_size,
-             dp, solver,subtract_self,
-             soft_len,
-             G        = 1.0):
+def rk4_step(positions, velocities, masses, dt, N, box_size,dp, solver,subtract_self,soft_len,G = 1.0):
     """
     4th-order RK for collision-less gravity on a periodic mesh.
     """
-    
+    boundary = 'periodic' if solver.startswith('periodic') else solver
 
     # RK4 stages
     a1 ,phi = compute_acceleration(positions, masses, N, box_size, dp,solver,subtract_self,soft_len)
@@ -222,12 +202,20 @@ def rk4_step(positions, velocities, masses,
     k4v = dt * a4
 
     new_pos = (positions +
-               (k1x + 2*k2x + 2*k3x + k4x)/6.0) % box_size
+               (k1x + 2*k2x + 2*k3x + k4x)/6.0)
     new_vel = velocities + \
               (k1v + 2*k2v + 2*k3v + k4v)/6.0
     
+    if boundary == "periodic":
+        new_pos %= box_size
+    elif boundary == "isolated":
+        mask = np.all((new_pos >= 0) & (new_pos < box_size), axis=1)
+        new_pos = new_pos[mask]
+        new_vel = new_vel[mask]
+        masses = masses[mask]
+    
     new_phi,w = compute_phi(new_pos, masses, N, box_size, dp, solver,soft_len)
-    return new_pos, new_vel, new_phi
+    return new_pos, new_vel, masses, new_phi
 
 
 
