@@ -16,8 +16,10 @@ center = N // 2
 dt = 0.001
 n_steps = 1000  #200
 dp = 'ngp'  # 'ngp', 'cic', or 'tsc'
-solver = 'periodic' # 'isolated', 'periodic ,'periodic_safe'
+solver = 'periodic_safe' # 'isolated', 'periodic ,'periodic_safe'
 integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
+self_force = True          # True or False
+softening = 0.01 
 
 # === Utility functions ===
 def create_point_mass(N):
@@ -116,11 +118,11 @@ def main():
         # Orbit integration
         ## change input parameter
         if integrator == 'kdk':
-            positions, velocities,phi = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=True)
+            positions, velocities,phi = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=self_force,soft_len=softening)
         elif integrator == 'dkd':
-            positions, velocities,phi = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=True)
+            positions, velocities,phi = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=self_force,soft_len=softening)
         elif integrator == 'rk4':
-            positions, velocities,phi = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=True)
+            positions, velocities,phi = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=self_force,soft_len=softening)
 
         
         # add hermite scheme
