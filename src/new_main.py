@@ -2,9 +2,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.animation import PillowWriter
-from poisson_solver import poisson_solver_periodic, poisson_solver_periodic_safe, poisson_solver_isolated
-from new_mass_deposition import deposit_ngp, deposit_cic, deposit_tsc
-from new_orbit_integrator import kdk_step, dkd_step, hermite_step_fixed, hermite_individual_step,rk4_step,hermite_step_fixed_pm
+#from new_mass_deposition import deposit_ngp, deposit_cic, deposit_tsc
+from new_orbit_integrator import kdk_step, dkd_step,rk4_step
+from new_orbit_integrator import compute_phi
 from utils import Timer  # optional
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -14,9 +14,9 @@ box_size = 1.0
 N_particles =  1000 #10000
 center = N // 2
 dt = 0.001
-n_steps = 1000  #200
+n_steps = 200  #200
 dp = 'ngp'  # 'ngp', 'cic', or 'tsc'
-solver = 'periodic_safe' # 'isolated', 'periodic ,'periodic_safe'
+solver = 'periodic_safe' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
 integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
 self_force = True          # True or False
 softening = 0.01 
@@ -39,7 +39,7 @@ def create_random_particles(N_particles, box_size):
 def create_random_center_particles(N_particles, box_size):
     """Generate random particle positions inside a sphere centered in the box."""
     center = np.array([box_size / 2] * 3)
-    radius = 0.05 * box_size  # Sphere radius
+    radius = 0.1 * box_size  # Sphere radius
 
     positions = []
     while len(positions) < N_particles:
@@ -61,21 +61,22 @@ def plot_slice(phi, box_size, title):
     plt.ylabel("y")
     plt.show()
 
-# periodic boundary energy
-def compute_total_energy(positions, velocities, masses, phi, N, box_size):
+
+def compute_total_energy(positions, velocities, masses, N, box_size,dp,solver):
     """Compute total energy (kinetic + potential) of the system."""
     KE = 0.5 * np.sum(masses * np.sum(velocities**2, axis=1))
 
-    dx = box_size / N
-    potential = np.zeros(len(positions))
-    for i, pos in enumerate(positions):
-        ix = int(np.round(pos[0] / dx)) % N
-        iy = int(np.round(pos[1] / dx)) % N
-        iz = int(np.round(pos[2] / dx)) % N
-        potential[i] = phi[ix, iy, iz]
-
-    PE = 0.5 * np.sum(masses * potential)
+    phi,weights = compute_phi(positions, masses, N, box_size, dp, solver, soft_len = softening)
+    particle_values = []
+    for weight in weights:
+        phi_par = 0.0  # use scalar
+        for idx, w in weight:
+            phi_par += phi[idx] * w
+        particle_values.append(phi_par)
+    particle_values = np.array(particle_values)
+    PE = 0.5*np.sum(masses*particle_values)
     return KE, PE
+
 
 def compute_total_momentum(velocities, masses):
     """Compute momentum (vector)"""
@@ -112,24 +113,28 @@ def main():
     frames = []           # potential field frames
     particle_frames = []  # particle position frames
     energies = []
+    KE_initial, PE_initial = compute_total_energy(positions, velocities, masses, N, box_size,dp,solver)
+    energies.append([KE_initial,PE_initial])
     saved_frames = set()
 
     for step in range(n_steps):
         # Orbit integration
+        #print(step)
         ## change input parameter
         if integrator == 'kdk':
-            positions, velocities,phi = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=self_force,soft_len=softening)
+            positions, velocities, masses, phi = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=self_force,soft_len=softening)
         elif integrator == 'dkd':
-            positions, velocities,phi = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=self_force,soft_len=softening)
+            positions, velocities,masses, phi = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=self_force,soft_len=softening)
         elif integrator == 'rk4':
-            positions, velocities,phi = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=self_force,soft_len=softening)
+            positions, velocities,masses, phi = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=self_force,soft_len=softening)
 
-        
+
         # add hermite scheme
 
 
         #Energy
-        KE, PE = compute_total_energy(positions, velocities, masses, phi, N, box_size)
+        #KE, PE = compute_total_energy(positions, velocities, masses, phi, N, box_size)
+        KE, PE = compute_total_energy(positions, velocities, masses, N, box_size,dp,solver)
         energies.append([KE, PE])
         #Momentum
         current_momentum = compute_total_momentum(velocities, masses)
@@ -174,6 +179,7 @@ def main():
     
     ani_combined = animation.FuncAnimation(fig3, animate_combined, frames=len(frames), interval=200, blit=False)
     plt.show()
+
     # --- Energy Conservation Plot ---
     energies = np.array(energies)
     KEs = energies[:,0]
