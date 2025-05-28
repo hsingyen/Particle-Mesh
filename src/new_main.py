@@ -7,6 +7,7 @@ from new_orbit_integrator import kdk_step, dkd_step,rk4_step
 from new_orbit_integrator import compute_phi
 from utils import Timer  # optional
 from mpl_toolkits.mplot3d import Axes3D
+from jeans_initial import create_particles
 
 # === Simulation parameters ===
 N = 64  # Grid size: N x N x N
@@ -14,7 +15,7 @@ box_size = 1.0
 N_particles =  1000 #10000
 center = N // 2
 dt = 0.001
-n_steps = 200  #200
+n_steps = 1000  #200
 dp = 'ngp'  # 'ngp', 'cic', or 'tsc'
 solver = 'periodic_safe' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
 integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
@@ -88,6 +89,9 @@ def main():
     #positions, velocities, masses = create_random_particles(N_particles, box_size)
     # test self-gravity collapse
     positions, velocities, masses = create_random_center_particles(N_particles, box_size)
+    #jeans equation
+    #positions, velocities, masses = create_particles(N_particles, box_size, profile = 'plummer', velocity_mode='expand', velocity_distribution='radial')
+
     fig_init, ax_init = plt.subplots()
     ax_init.scatter(positions[:, 0], positions[:, 1], s=5, alpha=0.6)
     circle = plt.Circle((box_size / 2, box_size / 2), 0.05 * box_size, color='r', fill=False, linestyle='--')
