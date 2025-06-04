@@ -21,6 +21,7 @@ solver = 'periodic_safe' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 
 integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
 self_force = True          # True or False
 softening = 0.01 
+velocity_scale = 5   #jeans equation, scale the velocity to get Q_J 
 
 # === Utility functions ===
 def create_point_mass(N):
@@ -83,14 +84,68 @@ def compute_total_momentum(velocities, masses):
     """Compute momentum (vector)"""
     return np.sum(masses[:, None] * velocities, axis=0)
 
+
+def compute_energies_direct(x, v, m, G=1.0, softening=1e-5):
+    #can be removed
+    N = len(m)
+    KE = 0.5 * np.sum(m * np.sum(v**2, axis=1))
+    PE = 0.0
+    for i in range(N):
+        for j in range(i+1, N):
+            dx = x[i] - x[j]
+            r2 = np.dot(dx, dx) + softening**2
+            PE -= G * m[i] * m[j] / np.sqrt(r2)
+    return KE, PE, KE + PE
+
+def compute_central_density(positions, radius=0.05, center=np.array([0.5, 0.5, 0.5])):
+    d = np.linalg.norm(positions - center, axis=1)
+    within = d < radius
+    return np.sum(within) / ((4/3) * np.pi * radius**3)
+
+
 # === Main Simulation ===
 def main():
     np.random.seed(42)
     #positions, velocities, masses = create_random_particles(N_particles, box_size)
     # test self-gravity collapse
-    positions, velocities, masses = create_random_center_particles(N_particles, box_size)
+    #positions, velocities, masses = create_random_center_particles(N_particles, box_size)
     #jeans equation
-    #positions, velocities, masses = create_particles(N_particles, box_size, profile = 'plummer', velocity_mode='expand', velocity_distribution='radial')
+    positions, velocities, masses = create_particles(
+        N_particles, box_size,
+        profile='plummer',
+        velocity_mode='stable',
+        velocity_distribution='isotropic'
+    )
+
+    # Manually scale the velocities
+    velocities *= velocity_scale
+
+    # Compare direct N-body energy with PM energy
+    '''
+    KE_direct, PE_direct, E_direct = compute_energies_direct(positions, velocities, masses, G=1.0, softening=softening)
+    print(f"[Initial Direct Energy] KE = {KE_direct:.4e}, PE = {PE_direct:.4e}, Total = {E_direct:.4e}")
+
+    KE_pm, PE_pm = compute_total_energy(positions, velocities, masses, N, box_size, dp, solver)
+    E_pm = KE_pm + PE_pm
+    print(f"[Initial PM Energy]     KE = {KE_pm:.4e}, PE = {PE_pm:.4e}, Total = {E_pm:.4e}")
+
+    print(f"[Energy Differences]")
+    print(f"ΔKE = {KE_pm - KE_direct:.4e}")
+    print(f"ΔPE = {PE_pm - PE_direct:.4e}")
+    print(f"ΔTotal = {E_pm - E_direct:.4e}")
+
+    print(f"[Relative Errors]")
+    print(f"ΔKE / KE_direct = {(KE_pm - KE_direct)/abs(KE_direct):.4e}")
+    print(f"ΔPE / PE_direct = {(PE_pm - PE_direct)/abs(PE_direct):.4e}")
+    print(f"ΔTotal / E_direct = {(E_pm - E_direct)/abs(E_direct):.4e}")
+    '''
+
+    # Initial Jeans Q_J calculation
+    '''
+    KE, PE = compute_total_energy(positions, velocities, masses, N, box_size, dp, solver)
+    Q_J = 2 * KE / abs(PE)
+    print(f"Initial Jeans Q_J = {Q_J:.2f}")
+    '''
 
     fig_init, ax_init = plt.subplots()
     ax_init.scatter(positions[:, 0], positions[:, 1], s=5, alpha=0.6)
@@ -119,7 +174,13 @@ def main():
     energies = []
     KE_initial, PE_initial = compute_total_energy(positions, velocities, masses, N, box_size,dp,solver)
     energies.append([KE_initial,PE_initial])
+    
+    central_densities = []
+    mean_radii = []
+
     saved_frames = set()
+
+            
 
     for step in range(n_steps):
         # Orbit integration
@@ -146,6 +207,12 @@ def main():
         momentum_errors.append(np.linalg.norm(delta_P))
         momentum_errors_xyz.append(np.abs(delta_P))
 
+
+        central_density = compute_central_density(positions)
+        central_densities.append(central_density)
+        mean_r = np.mean(np.linalg.norm(positions - np.array([0.5, 0.5, 0.5]), axis=1))
+        mean_radii.append(mean_r)
+
         #print(f"Step {step}")
         #print("  KE =", KE)
         #print("  PE =", PE)
@@ -157,7 +224,7 @@ def main():
 
         # Save frames every 2 steps
         if step % 2 == 0:
-            frames.append(phi[:,:,center].copy())
+            frames.append(phi[:,:,center].T.copy())
             particle_frames.append(positions.copy())
     
     # --- Combined Potential + Particles Animation ---
@@ -223,6 +290,21 @@ def main():
     plt.legend()
     plt.grid()
     plt.show()
+
+    '''
+    # --- Central Density Evolution ---
+    plt.plot(mean_radii)
+    plt.xlabel("Step")
+    plt.ylabel("Mean Radius")
+    plt.title("System Expansion")
+    plt.figure()
+    plt.plot(central_densities)
+    plt.xlabel("Step")
+    plt.ylabel("Central Density")
+    plt.title("Central Density Evolution")
+    plt.grid()
+    plt.show()
+    '''
 
 if __name__ == "__main__":
     main()
