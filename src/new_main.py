@@ -141,11 +141,9 @@ def main():
     '''
 
     # Initial Jeans Q_J calculation
-    '''
     KE, PE = compute_total_energy(positions, velocities, masses, N, box_size, dp, solver)
     Q_J = 2 * KE / abs(PE)
     print(f"Initial Jeans Q_J = {Q_J:.2f}")
-    '''
 
     fig_init, ax_init = plt.subplots()
     ax_init.scatter(positions[:, 0], positions[:, 1], s=5, alpha=0.6)
