@@ -39,9 +39,7 @@ def poisson_solver_periodic(rho, box_size, G=1.0):
     phi = np.real(fft.ifftn(phi_k))
     return phi
 
-# ---------------------------------------------------------------------
-#  extra solver: same name + extra kwarg keeps old calls working
-# ---------------------------------------------------------------------
+
 def poisson_solver_periodic_safe(rho, box_size, soft_len, G=1.0):
     """
     Solve ∇²φ = 4πG ρ  on a cubic grid with periodic BCs.
