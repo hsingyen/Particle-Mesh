@@ -10,18 +10,19 @@ from mpl_toolkits.mplot3d import Axes3D
 from jeans_initial import create_particles
 
 # === Simulation parameters ===
-N = 64  # Grid size: N x N x N
+N = 128  # Grid size: N x N x N
 box_size = 1.0
-N_particles =  1000 #10000
+N_particles =  10000 #10000
 center = N // 2
 dt = 0.001
 n_steps = 1000  #200
 dp = 'ngp'  # 'ngp', 'cic', or 'tsc'
-solver = 'periodic_safe' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
+solver = 'periodic' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
 integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
 self_force = True          # True or False
 softening = 0.01 
 velocity_scale = 5   #jeans equation, scale the velocity to get Q_J 
+a = 0.005
 
 # === Utility functions ===
 def create_point_mass(N):
@@ -110,15 +111,10 @@ def main():
     # test self-gravity collapse
     #positions, velocities, masses = create_random_center_particles(N_particles, box_size)
     #jeans equation
-    positions, velocities, masses = create_particles(
-        N_particles, box_size,
-        profile='plummer',
-        velocity_mode='stable',
-        velocity_distribution='isotropic'
-    )
+    positions, velocities, masses = create_particles(N_particles, box_size, a = a , M =1.0, mode='stable',r_max = 5, G = 1.0)
 
     # Manually scale the velocities
-    velocities *= velocity_scale
+    #velocities *= velocity_scale
 
     # Compare direct N-body energy with PM energy
     '''
