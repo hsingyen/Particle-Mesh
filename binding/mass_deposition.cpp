@@ -36,9 +36,12 @@ std::pair< py::array_t<double>, py::list > deposit_ngp(
     double dx     = box_size / static_cast<double>(N);
     double inv_vol = 1.0 / (dx * dx * dx);
     int NN = N * N;
+    // pre-allocate weight index storage
+    std::vector<std::array<int,3>> weight_idx(M);
+    
 
-    py::list weights_list;
-
+    // parallel loop over particles
+    #pragma omp parallel for
     for (ssize_t i = 0; i < M; ++i) {
         double x = pos_ptr[i * cols + 0] / dx;
         double y = pos_ptr[i * cols + 1] / dx;
@@ -52,18 +55,31 @@ std::pair< py::array_t<double>, py::list > deposit_ngp(
             ix %= N; if (ix < 0) ix += N;
             iy %= N; if (iy < 0) iy += N;
             iz %= N; if (iz < 0) iz += N;
+            #pragma omp atomic
             rho_ptr[ static_cast<ssize_t>(ix)*NN + static_cast<ssize_t>(iy)*N + iz ] += mass_ptr[i] * inv_vol;
+            weight_idx[i] = {ix, iy, iz};
+
         }
         else if (boundary == "isolated") {
             if (0 <= ix && ix < N && 0 <= iy && iy < N && 0 <= iz && iz < N) {
+                #pragma omp atomic
                 rho_ptr[ static_cast<ssize_t>(ix)*NN + static_cast<ssize_t>(iy)*N + iz ] += mass_ptr[i] * inv_vol;
+                weight_idx[i] = {ix, iy, iz};
+
             }
         }
         else {
             throw std::runtime_error("boundary must be 'periodic' or 'isolated'");
         }
 
-        py::tuple idx3 = py::make_tuple(ix, iy, iz);
+        // store for ordered weight output
+    }
+
+    // build Python weight list in original order
+    py::list weights_list;
+    for (ssize_t i = 0; i < M; ++i) {
+        auto &idx3_arr = weight_idx[i];
+        py::tuple idx3  = py::make_tuple(idx3_arr[0], idx3_arr[1], idx3_arr[2]);
         py::tuple entry = py::make_tuple(idx3, 1);
         py::list this_weights;
         this_weights.append(entry);
@@ -107,8 +123,12 @@ std::pair< py::array_t<double>, py::list > deposit_cic(
     double inv_vol = 1.0 / (dx * dx * dx);
     int NN = N * N;
 
-    py::list weights_list;
+    std::vector<std::vector<std::pair<std::array<int,3>, double>>> tmp(M);
+    for (auto &v : tmp) {
+        v.reserve(8);
+    }
 
+    #pragma omp parallel for 
     for (ssize_t i = 0; i < M; ++i) {
         double xp = pos_ptr[i * cols + 0] / dx;
         double yp = pos_ptr[i * cols + 1] / dx;
@@ -134,33 +154,45 @@ std::pair< py::array_t<double>, py::list > deposit_cic(
                     int iz = k0 + dz_;
                     double w = wx[dx_] * wy[dy_] * wz[dz_];
 
-                    int ixp = ix, iyp = iy, izp = iz;
                     if (boundary == "periodic") {
-                        ixp %= N; if (ixp < 0) ixp += N;
-                        iyp %= N; if (iyp < 0) iyp += N;
-                        izp %= N; if (izp < 0) izp += N;
-                        rho_ptr[ static_cast<ssize_t>(ixp)*NN + static_cast<ssize_t>(iyp)*N + izp ]
+                        ix %= N; if (ix < 0) ix += N;
+                        iy %= N; if (iy < 0) iy += N;
+                        iz %= N; if (iz < 0) iz += N;
+                        #pragma omp atomic
+                        rho_ptr[ static_cast<ssize_t>(ix)*NN + static_cast<ssize_t>(iy)*N + iz ]
                             += mass_ptr[i] * inv_vol * w;
+                        tmp[i].push_back({{ix,iy,iz}, w}); 
+
                     }
                     else if (boundary == "isolated") {
                         if (0 <= ix && ix < N && 0 <= iy && iy < N && 0 <= iz && iz < N) {
+                            #pragma omp atomic
                             rho_ptr[ static_cast<ssize_t>(ix)*NN + static_cast<ssize_t>(iy)*N + iz ]
                                 += mass_ptr[i] * inv_vol * w;
+                            tmp[i].push_back({{ix,iy,iz}, w}); 
+
                         }
                     }
                     else {
                         throw std::runtime_error("boundary must be 'periodic' or 'isolated'");
                     }
-
-                    py::tuple idx3 = py::make_tuple(ix, iy, iz);
-                    py::tuple entry = py::make_tuple(idx3, w);
-                    py::list this_weights;
-                    this_weights.append(entry);
-                    weights_list.append(this_weights);
+                    
                 }
             }
         }
     }
+    py::list weights_list;
+    for (ssize_t i = 0; i < M; ++i) {
+        py::list this_weights;
+        for (auto &p : tmp[i]) {
+            auto &idx3 = p.first;
+            double w  = p.second;
+            py::tuple t = py::make_tuple(py::make_tuple(idx3[0], idx3[1], idx3[2]), w);
+            this_weights.append(t);
+        }
+        weights_list.append(this_weights);
+    }
+
 
     return std::make_pair(rho, weights_list);
 }
@@ -199,8 +231,12 @@ std::pair< py::array_t<double>, py::list > deposit_tsc(
     double inv_vol = 1.0 / (dx * dx * dx);
     int NN = N * N;
 
-    py::list weights_list;
+    std::vector<std::vector<std::pair<std::array<int,3>, double>>> tmp(M);
+    for (auto &v : tmp) {
+        v.reserve(8);
+    }
 
+    #pragma omp parallel for
     for (ssize_t i = 0; i < M; ++i) {
         double xp = pos_ptr[i * cols + 0] / dx;
         double yp = pos_ptr[i * cols + 1] / dx;
@@ -262,31 +298,47 @@ std::pair< py::array_t<double>, py::list > deposit_tsc(
                         ix %= N; if (ix< 0) ix += N;
                         iy %= N; if (iy < 0) iy += N;
                         iz %= N; if (iz < 0) iz += N;
+                        #pragma omp atomic
                         rho_ptr[ static_cast<ssize_t>(ix)*NN + static_cast<ssize_t>(iy)*N + iz ]
                             += mass_ptr[i] * inv_vol * w;
+                        tmp[i].push_back({{ix,iy,iz}, w}); 
+
                     }
                     else if (boundary == "isolated") {
                         if (0 <= ix && ix < N && 0 <= iy && iy < N && 0 <= iz && iz < N) {
+                            #pragma omp atomic
                             rho_ptr[ static_cast<ssize_t>(ix)*NN + static_cast<ssize_t>(iy)*N + iz ]
                                 += mass_ptr[i] * inv_vol * w;
+                            tmp[i].push_back({{ix,iy,iz}, w}); 
+
                         }
                     }
                     else {
                         throw std::runtime_error("boundary must be 'periodic' or 'isolated'");
                     }
 
-                    py::tuple idx3 = py::make_tuple(ix, iy, iz);
-                    py::tuple entry = py::make_tuple(idx3, w);
-                    py::list this_weights;
-                    this_weights.append(entry);
-                    weights_list.append(this_weights);
+
                 }
             }
         }
+
     }
+    py::list weights_list;
+    for (ssize_t i = 0; i < M; ++i) {
+        py::list this_weights;
+        for (auto &p : tmp[i]) {
+            auto &idx3 = p.first;
+            double w  = p.second;
+            py::tuple t = py::make_tuple(py::make_tuple(idx3[0], idx3[1], idx3[2]), w);
+            this_weights.append(t);
+        }
+        weights_list.append(this_weights);
+    }
+
 
     return std::make_pair(rho, weights_list);
 }
+
 
 
 PYBIND11_MODULE(example_omp, m) {
