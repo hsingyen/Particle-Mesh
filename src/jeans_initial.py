@@ -1,97 +1,189 @@
 import numpy as np
 from scipy.integrate import quad
-
-# NFW profile
-def nfw_density_profile(r, rho0=1.0, rs=1.0):
-    return rho0 / ((r / rs) * (1 + r / rs)**2)
-
-def dphi_dr_nfw(r, G=1.0, rho0=1.0, rs=1.0):
-    x = r / rs
-    M_r = 4 * np.pi * rho0 * rs**3 * (np.log(1 + x) - x / (1 + x))
-    return G * M_r / r**2
+import matplotlib.pyplot as plt
+from scipy.stats import norm
 
 # Plummer profile
-def plummer_density_profile(r, M=1.0, a=1.0):
+def plummer_density_profile(r, a, M=1.0):
     return (3 * M) / (4 * np.pi * a**3) * (1 + (r / a)**2)**(-2.5)
 
-def dphi_dr_plummer(r, G=1.0, M=1.0, a=1.0):
-    return G * M * r / (r**2 + a**2)**(1.5)
+def dphi_dr_plummer(r, a,G=1.0, M=1.0):
+    return G * M * r / np.sqrt(r**2 + a**2)**3.0
 
-# Jeans equation solver
-def jeans_velocity_dispersion(r, density_func, dphi_dr_func, r_max=10.0, **kwargs):
-    sigma2 = []
-    for ri in r:
-        integrand = lambda rp: density_func(rp, **kwargs) * dphi_dr_func(rp, **kwargs)
-        integral, _ = quad(integrand, ri, r_max)
-        sigma2_i = integral / density_func(ri, **kwargs)
-        sigma2.append(sigma2_i)
-    return np.array(sigma2)
+def phi_plummer(r, a,G=1.0, M=1.0):
+    return -G*M/np.sqrt(r**2+a**2)
 
-# Position sampler
-def sample_positions_from_density(N, r_max, density_func, **kwargs):
-    positions = []
-    r_vals = np.linspace(0.001, r_max, 1000)
-    rho_vals = density_func(r_vals, **kwargs)
-    rho_max = np.max(rho_vals)
+def plummer_velocity_dispersion(r,a,M=1.0,G=1.0):
+    return G * M / np.sqrt(r**2 + a**2)/6.0
 
-    while len(positions) < N:
-        r_try = np.random.uniform(0, r_max)
-        prob = density_func(r_try, **kwargs) / rho_max
-        if np.random.rand() < prob:
-            theta = np.arccos(1 - 2 * np.random.rand())
-            phi = 2 * np.pi * np.random.rand()
-            x = r_try * np.sin(theta) * np.cos(phi)
-            y = r_try * np.sin(theta) * np.sin(phi)
-            z = r_try * np.cos(theta)
-            positions.append([x, y, z])
-    return np.array(positions)
+def sample_plummer_radius(N, a, r_max=50.0):
+    r = []
+    while len(r) < N:
+        u = np.random.rand()
+        val = a * u**(2/3) / (1 - u**(2/3))**0.5
+        if val < r_max * a:
+            r.append(val)
+    return np.array(r)
 
-# Common particle creator
-def create_particles(N_particles, box_size, profile="plummer", velocity_mode="stable", velocity_distribution="isotropic"):
-    G = 1.0
-    r_max = box_size / 5
+def create_particles(N_particles, box_size, a, M, mode="stable",r_max=5.0,G=1.0):
+    """
+
+    Parameters:
+        N_particles       : int    
+        box_size: float  
+        a       : float 
+        M       : float  
+        G       : float 
+        mode    : str    "stable", "contract", or "expand"
+
+    Returns:
+        positions: (N, 3) 
+        velocities: (N, 3) 
+        masses: (N,) 
+    """
+    # --- Step 1: Generate positions using Plummer distribution
     box_center = np.array([box_size / 2] * 3)
+    u = np.random.rand(N_particles)
+    r = a * (u**(-2/3) - 1)**(-0.5)  # radial distribution from inverse CDF
 
-    if profile == "plummer":
-        M = 1.0
-        a = 1.0
-        density_func = plummer_density_profile
-        dphi_func = dphi_dr_plummer
-        kwargs = dict(M=M, a=a)
-    elif profile == "nfw":
-        rho0 = 1.0
-        rs = 1.0
-        density_func = nfw_density_profile
-        dphi_func = dphi_dr_nfw
-        kwargs = dict(rho0=rho0, rs=rs)
-    else:
-        raise ValueError(f"Unknown profile: {profile}")
+    theta = np.arccos(1 - 2 * np.random.rand(N_particles))
+    phi = 2 * np.pi * np.random.rand(N_particles)
 
-    positions = sample_positions_from_density(N_particles, r_max, density_func, **kwargs)
-    positions += box_center
-    r_sample = np.linalg.norm(positions - box_center, axis=1)
+    x = r * np.sin(theta) * np.cos(phi)
+    y = r * np.sin(theta) * np.sin(phi)
+    z = r * np.cos(theta)
+    positions = np.stack([x, y, z], axis=1) + box_center
 
-    sigma2_vals = jeans_velocity_dispersion(r_sample, density_func, dphi_func, r_max=10.0, **kwargs)
-    sigma_vals = np.sqrt(sigma2_vals)
-
-    if velocity_mode == "stable":
+    # --- Step 2: Compute velocity dispersion at each radius
+    if mode == "stable":
         scale = 1.0
-    elif velocity_mode == "contract":
-        scale = 0.1
-    elif velocity_mode == "expand":
-        scale = 2.0
+    elif mode == "contract":
+        scale = 0.5
+    elif mode == "expand":
+        scale = 1.5
     else:
-        raise ValueError(f"Unknown velocity_mode: {velocity_mode}")
+        raise ValueError(f"Unknown mode '{mode}'")
 
-    if velocity_distribution == "isotropic":
-        velocities = np.random.normal(0, 1, size=(N_particles, 3)) * (scale * sigma_vals[:, np.newaxis])
-    elif velocity_distribution == "radial":
-        directions = positions - box_center
-        unit_vectors = directions / np.linalg.norm(directions, axis=1)[:, np.newaxis]
-        v_mags = np.random.normal(0, 1, size=N_particles) * (scale * sigma_vals)
-        velocities = unit_vectors * v_mags[:, np.newaxis]
-    else:
-        raise ValueError(f"Unknown velocity_distribution: {velocity_distribution}")
+    sigma = plummer_velocity_dispersion(r, a, M, G)
+    velocities = np.random.normal(0, 1, size=(N_particles, 3)) * (scale * sigma[:, np.newaxis])
 
-    masses = np.ones(N_particles) * (1.0 / N_particles)
+    # --- Step 3: Assign equal mass to all particles
+    masses = np.full(N_particles, M / N_particles)
+
     return positions, velocities, masses
+
+def compute_enclosed_density(box_size,positions, masses, a, nbins=100):
+    center = np.array([box_size / 2] * 3)
+    rel_pos = positions - center
+    r = np.linalg.norm(rel_pos, axis=1)
+
+    r_bins = np.linspace(1e-4, np.max(r), nbins)
+    rho_enclosed = []
+    r_over_a = []
+
+    for r_cut in r_bins:
+        enclosed = r <= r_cut
+        M_enclosed = np.sum(masses[enclosed])
+        V = (4/3) * np.pi * r_cut**3
+        rho_enclosed.append(M_enclosed / V)
+        r_over_a.append(r_cut / a)
+
+    return np.array(r_over_a), np.array(rho_enclosed)
+
+def compute_shell_density(box_size, positions, masses, a, nbins=100):
+    center = np.array([box_size / 2] * 3)
+    rel_pos = positions - center
+    r = np.linalg.norm(rel_pos, axis=1)
+
+    r_edges = np.linspace(0, np.max(r), nbins + 1)
+    rho_shell = []
+    r_mid = []
+
+    for i in range(nbins):
+        r_inner = r_edges[i]
+        r_outer = r_edges[i+1]
+        in_shell = (r >= r_inner) & (r < r_outer)
+        M_shell = np.sum(masses[in_shell])
+        V_shell = (4/3) * np.pi * (r_outer**3 - r_inner**3)
+        rho_shell.append(M_shell / V_shell if V_shell > 0 else 0)
+        r_mid.append(0.5 * (r_inner + r_outer))
+
+    return np.array(r_mid) / a, np.array(rho_shell)
+
+def plot_density_vs_r(box_size, positions, masses, a, M):
+    #r_over_a, rho_enclosed = compute_enclosed_density(box_size, positions, masses, a)
+    r_over_a, rho_enclosed = compute_shell_density(box_size, positions, masses, a)
+    r_plot = np.linspace(0.001, 2, 200)
+    rho_true = (3 * M) / (4 * np.pi * a**3) * (1 + (r_plot / a)**2)**(-2.5)
+
+    plt.figure(figsize=(6, 5))
+    plt.plot(r_over_a, rho_enclosed, 'o', label="Simulated setup")
+    plt.plot(r_plot / a, rho_true, '-', label="Plummer Analytic")
+    plt.xscale('log')
+    plt.yscale('log')
+    #plt.xlim(0.001, 2)
+    #plt.ylim(0,10)
+    plt.xlabel(r'$r/a$')
+    plt.ylabel(r'$\rho(r)$')
+    plt.legend()
+    plt.title("Plummer Density Profile")
+    plt.tight_layout()
+    plt.show()
+
+def plot_velocity_distribution(velocities):
+    plt.figure(figsize=(12, 4))
+    for i, comp in enumerate(['vx', 'vy', 'vz']):
+        plt.subplot(1, 3, i+1)
+        data = velocities[:, i]
+        mu, std = np.mean(data), np.std(data)
+        x = np.linspace(data.min(), data.max(), 100)
+        plt.hist(data, bins=40, density=True, alpha=0.6, label='Data')
+        plt.plot(x, norm.pdf(x, mu, std), 'r--', label=f'Gaussian\n$\mu$={mu:.2f}, $\sigma$={std:.2f}')
+        plt.xlabel(comp)
+        plt.ylabel("PDF")
+        plt.legend()
+    plt.suptitle("Velocity Component Distributions")
+    plt.tight_layout()
+    plt.show()
+
+def plot_velocity_dispersion_profile(positions, velocities, a, M=1.0, G=1.0, nbins=30):
+    # Compute radius from center
+    center = np.mean(positions, axis=0)
+    rel_pos = positions - center
+    r = np.linalg.norm(rel_pos, axis=1)
+    
+    # Use only vx for dispersion (could also average over vx, vy, vz)
+    vx = velocities[:, 0]
+    
+    # Bin data in radius
+    bins = np.logspace(np.log10(np.min(r[r>0])), np.log10(np.max(r)), nbins+1)
+    r_bin_centers = 0.5 * (bins[:-1] + bins[1:])
+    sigma_sim = []
+
+    for i in range(nbins):
+        mask = (r >= bins[i]) & (r < bins[i+1])
+        if np.sum(mask) > 1:
+            sigma = np.std(vx[mask])
+            sigma_sim.append(sigma)
+        else:
+            sigma_sim.append(np.nan)
+    
+    sigma_sim = np.array(sigma_sim)
+
+    # Compute analytic dispersion
+    r_analytic = np.logspace(np.log10(np.min(r_bin_centers[~np.isnan(sigma_sim)])), np.log10(np.max(r_bin_centers)), 200)
+    sigma_analytic = plummer_velocity_dispersion(r_analytic, a, M, G)
+
+    # Plotting
+    plt.figure(figsize=(7,5))
+    plt.plot(r_analytic/a, sigma_analytic, label="Plummer Analytic", color='orange')
+    plt.scatter(r_bin_centers/a, sigma_sim, label="Simulated dispersion(r)", s=20)
+    plt.xscale('log')
+    plt.yscale('log')
+    plt.xlabel(r'$r/a$')
+    plt.ylabel(r'$\sigma(r)$')
+    plt.title("Velocity Dispersion Profile")
+    plt.legend()
+    plt.grid(True, which="both", ls='--', alpha=0.3)
+    plt.tight_layout()
+    plt.show()
