@@ -2,6 +2,7 @@ import numpy as np
 from itertools import product
 from poisson_solver import poisson_solver_periodic_safe, poisson_solver_periodic,poisson_solver_isolated
 from new_mass_deposition import deposit_cic,deposit_ngp,deposit_tsc
+import example_omp
 
 ### acc: compute grid acc => back to particle by weighting => update scheme
 
@@ -82,10 +83,13 @@ def compute_phi(positions, masses, N, box_size, dp, solver, soft_len):
     # Step 1: Mass deposition
     if dp == "ngp":
         rho, weights = deposit_ngp(positions, masses, N, box_size, boundary)
+        #rho, weights = example_omp.deposit_ngp(positions, masses, N, box_size, boundary)
     elif dp == "cic":
         rho, weights = deposit_cic(positions, masses, N, box_size, boundary)
+        #rho, weights = example_omp.deposit_cic(positions, masses, N, box_size, boundary)
     elif dp == "tsc":
         rho, weights = deposit_tsc(positions, masses, N, box_size, boundary)
+        #rho, weights = example_omp.deposit_tsc(positions, masses, N, box_size, boundary)
     else:
         raise ValueError("Unknown deposition method")
     
