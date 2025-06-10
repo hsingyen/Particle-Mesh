@@ -8,6 +8,7 @@ from new_orbit_integrator import compute_phi
 from utils import Timer  # optional
 from mpl_toolkits.mplot3d import Axes3D
 from jeans_initial import create_particles
+import time
 
 # === Simulation parameters ===
 N = 64  # Grid size: N x N x N
@@ -179,6 +180,7 @@ def main():
     saved_frames = set()
 
             
+    start = time.time()
 
     for step in range(n_steps):
         # Orbit integration
@@ -224,7 +226,10 @@ def main():
         if step % 2 == 0:
             frames.append(phi[:,:,center].T.copy())
             particle_frames.append(positions.copy())
-    
+    end = time.time()
+    # 輸出結果
+    print("執行時間：%f 秒" % (end - start))
+
     # --- Combined Potential + Particles Animation ---
     fig3, ax3 = plt.subplots()
     im = ax3.imshow(frames[0], extent=[0, box_size, 0, box_size], origin='lower',
