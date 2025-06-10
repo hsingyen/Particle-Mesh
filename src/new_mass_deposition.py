@@ -8,12 +8,9 @@ def deposit_ngp(positions, masses, N, box_size, boundary):
     weights_list = []  # NEW: list of weights per particle
 
     for pos, m in zip(positions, masses):
-        #ix = int(np.round(pos[0] / dx))
-        #iy = int(np.round(pos[1] / dx))
-        #iz = int(np.round(pos[2] / dx))
-        ix = int(np.floor(pos[0] / dx))
-        iy = int(np.floor(pos[1] / dx))
-        iz = int(np.floor(pos[2] / dx))
+        ix = int(np.round(pos[0] / dx))
+        iy = int(np.round(pos[1] / dx))
+        iz = int(np.round(pos[2] / dx))
 
         if boundary == 'periodic':
             ix %= N
@@ -103,9 +100,9 @@ def deposit_tsc(positions, masses, N, box_size, boundary):
         yg = pos[1] / dx
         zg = pos[2] / dx
 
-        ix = int(np.floor(xg)) % N
-        iy = int(np.floor(yg)) % N
-        iz = int(np.floor(zg)) % N
+        ix = int(np.floor(xg)) 
+        iy = int(np.floor(yg)) 
+        iz = int(np.floor(zg)) 
 
         dx1 = xg - ix
         dy1 = yg - iy
