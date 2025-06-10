@@ -15,7 +15,7 @@ box_size = 1.0
 N_particles =  10000 #10000
 center = N // 2
 dt = 0.001
-n_steps = 1000  #200
+n_steps = 10  #200
 dp = 'ngp'  # 'ngp', 'cic', or 'tsc'
 solver = 'periodic' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
 integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
