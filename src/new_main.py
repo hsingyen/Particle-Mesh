@@ -11,18 +11,17 @@ from jeans_initial import create_particles
 
 # === Simulation parameters ===
 N = 128  # Grid size: N x N x N
-box_size = 1.0
-N_particles =  10000 #10000
+box_size = 1
+N_particles =  100 #10000
 center = N // 2
-dt = 0.001
-n_steps = 10  #200
+dt = 2e-4
+n_steps = 500  #200
 dp = 'ngp'  # 'ngp', 'cic', or 'tsc'
-solver = 'periodic' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
+solver = 'isolated' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
 integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
-self_force = True          # True or False
-softening = 0.01 
-velocity_scale = 5   #jeans equation, scale the velocity to get Q_J 
-a = 0.005
+self_force = False         # True or False
+softening = box_size /N 
+a = 0.05
 
 # === Utility functions ===
 def create_point_mass(N):
@@ -111,7 +110,7 @@ def main():
     # test self-gravity collapse
     #positions, velocities, masses = create_random_center_particles(N_particles, box_size)
     #jeans equation
-    positions, velocities, masses = create_particles(N_particles, box_size, a = a , M =1.0, mode='stable',r_max = 5, G = 1.0)
+    positions, velocities, masses = create_particles(N_particles, box_size, a = a , M =1.0, mode='expand',r_max = 5, G = 1.0)
 
     # Manually scale the velocities
     #velocities *= velocity_scale
@@ -136,7 +135,7 @@ def main():
     print(f"ΔTotal / E_direct = {(E_pm - E_direct)/abs(E_direct):.4e}")
     '''
 
-    # Initial Jeans Q_J calculation
+    #Initial Jeans Q_J calculation
     KE, PE = compute_total_energy(positions, velocities, masses, N, box_size, dp, solver)
     Q_J = 2 * KE / abs(PE)
     print(f"Initial Jeans Q_J = {Q_J:.2f}")
@@ -152,7 +151,7 @@ def main():
     ax_init.set_ylabel("y")
     ax_init.set_title("Initial Particle Positions (XY Plane)")
     plt.tight_layout()
-    plt.show()
+    #plt.show()
     #print("Position range:", positions.min(), positions.max())
     #print("Velocity sample:", velocities[:3])
     #print("Total mass:", masses.sum())

@@ -14,7 +14,7 @@ def phi_plummer(r, a,G=1.0, M=1.0):
     return -G*M/np.sqrt(r**2+a**2)
 
 def plummer_velocity_dispersion(r,a,M=1.0,G=1.0):
-    return G * M / np.sqrt(r**2 + a**2)/6.0
+    return np.sqrt(G * M / np.sqrt(r**2 + a**2)/6.0)
 
 def sample_plummer_radius(N, a, r_max=50.0):
     r = []
@@ -24,6 +24,7 @@ def sample_plummer_radius(N, a, r_max=50.0):
         if val < r_max * a:
             r.append(val)
     return np.array(r)
+
 
 def create_particles(N_particles, box_size, a, M, mode="stable",r_max=5.0,G=1.0):
     """
