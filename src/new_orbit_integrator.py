@@ -2,7 +2,7 @@ import numpy as np
 from itertools import product
 from poisson_solver import poisson_solver_periodic_safe, poisson_solver_periodic,poisson_solver_isolated
 from new_mass_deposition import deposit_cic,deposit_ngp,deposit_tsc
-import example_omp
+#import example_omp
 
 ### acc: compute grid acc => back to particle by weighting => update scheme
 
@@ -107,8 +107,42 @@ def compute_phi(positions, masses, N, box_size, dp, solver, soft_len):
 
     return phi,weights
 
+def nbody_compute_acceleration(positions, masses, N, box_size):
+    particle_values = []
+    N_particles =len(masses)
+    for i in range(N_particles):
+        acc = np.zeros(3)
+        for j in range(0, N_particles):
+            if i!=j:
+                dx = positions[i] - positions[j]
+                r = np.sqrt(dx[0]**2+dx[1]**2+dx[2]**2 + box_size/N**2 )
+                acc[0] -= 1.0 *  masses[j]*dx[0] / r**3
+                acc[1] -= 1.0 *  masses[j]*dx[1] / r**3
+                acc[2] -= 1.0 *  masses[j]*dx[2] / r**3
+
+        particle_values.append(acc)
+    acc_direct = np.array(particle_values)
+
+    #calculate grid phi
+    phi = np.zeros((N,N,N))
+    for i in range(N):
+        for j in range(N):
+            for k in range(N):
+                for l in range(N_particles):
+                    r = np.sqrt((positions[l,0]-i/N)**2+
+                                (positions[l,1]-j/N)**2+
+                                (positions[l,2]-k/N)**2+ box_size/N**2 )
+                    phi[i,j,k] -= 1.0 *  masses[l] / r
+    return acc_direct,phi
 
 
+
+
+
+
+#---------------------------------------------------------------------------------------------------------------#
+#-----------------------------------------Update methods--------------------------------------------------------#
+#---------------------------------------------------------------------------------------------------------------#
 
 def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self,soft_len):
     """
@@ -133,8 +167,8 @@ def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtrac
 
     # Second Kick (half step)
     acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self,soft_len)
+
     velocities += 0.5 * dt * acc
-    
     
     #net_force = np.sum(acc * masses[:, np.newaxis], axis=0)
     #print("Net force:", net_force)

@@ -10,19 +10,18 @@ from mpl_toolkits.mplot3d import Axes3D
 from jeans_initial import create_particles
 import time
 
-# === Simulation parameters ===
 N = 64  # Grid size: N x N x N
-box_size = 1.0
-N_particles =  1000 #10000
+box_size = 1
+N_particles =  100 #10000
 center = N // 2
-dt = 0.001
-n_steps = 10  #200
+dt = 2e-4
+n_steps = 500  #200
 dp = 'ngp'  # 'ngp', 'cic', or 'tsc'
-solver = 'periodic_safe' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
-integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
-self_force = True          # True or False
-softening = 0.01 
-velocity_scale = 5   #jeans equation, scale the velocity to get Q_J 
+solver = 'periodic' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
+integrator = 'dkd'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
+self_force = False         # True or False
+softening = box_size /N 
+a = 0.05
 
 # === Utility functions ===
 def create_point_mass(N):
@@ -109,17 +108,27 @@ def main():
     np.random.seed(42)
     #positions, velocities, masses = create_random_particles(N_particles, box_size)
     # test self-gravity collapse
-    #positions, velocities, masses = create_random_center_particles(N_particles, box_size)
+    # positions, velocities, masses = create_random_center_particles(N_particles, box_size)
     #jeans equation
     positions, velocities, masses = create_particles(
         N_particles, box_size,
-        profile='plummer',
-        velocity_mode='stable',
-        velocity_distribution='isotropic'
+        0.05,10,
+        mode='contract',
     )
+    speeds2 = np.sum(velocities**2, axis=1)   # v_i^2
+    K = 0.5 * np.sum(masses * speeds2)
+
+    # 勢能
+    W = 0.0
+    for i in range(N_particles):
+        for j in range(i+1, N_particles):
+            dx = positions[i] - positions[j]
+            r = np.linalg.norm(dx)
+            W -= 1.0 * masses[i] * masses[j] / r
+    print("potetial ",W,"Kenetic E ",K, "Ratio ", -W/2/K)
+
 
     # Manually scale the velocities
-    velocities *= velocity_scale
 
     # Compare direct N-body energy with PM energy
     '''
@@ -144,6 +153,8 @@ def main():
     # Initial Jeans Q_J calculation
     KE, PE = compute_total_energy(positions, velocities, masses, N, box_size, dp, solver)
     Q_J = 2 * KE / abs(PE)
+    print("Poisson potetial ",PE,"Kenetic E ",KE, "Ratio ", -PE/2/KE)
+
     print(f"Initial Jeans Q_J = {Q_J:.2f}")
 
     fig_init, ax_init = plt.subplots()
@@ -187,7 +198,9 @@ def main():
         #print(step)
         ## change input parameter
         if integrator == 'kdk':
+            # positions, velocities, masses, phi = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=self_force,soft_len=softening)
             positions, velocities, masses, phi = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=self_force,soft_len=softening)
+        
         elif integrator == 'dkd':
             positions, velocities,masses, phi = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtract_self=self_force,soft_len=softening)
         elif integrator == 'rk4':
@@ -251,7 +264,7 @@ def main():
         title3.set_text(f"Particles + Potential at Frame {i}")
         return im, scatter, title3
     
-    ani_combined = animation.FuncAnimation(fig3, animate_combined, frames=len(frames), interval=200, blit=False)
+    ani_combined = animation.FuncAnimation(fig3, animate_combined, frames=len(particle_frames), interval=200, blit=False)
     plt.show()
 
     # --- Energy Conservation Plot ---

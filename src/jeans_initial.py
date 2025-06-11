@@ -14,7 +14,7 @@ def phi_plummer(r, a,G=1.0, M=1.0):
     return -G*M/np.sqrt(r**2+a**2)
 
 def plummer_velocity_dispersion(r,a,M=1.0,G=1.0):
-    return G * M / np.sqrt(r**2 + a**2)/6.0
+    return np.sqrt(G * M / np.sqrt(r**2 + a**2)/6.0)
 
 def sample_plummer_radius(N, a, r_max=50.0):
     r = []
@@ -66,6 +66,12 @@ def create_particles(N_particles, box_size, a, M, mode="stable",r_max=5.0,G=1.0)
 
     sigma = plummer_velocity_dispersion(r, a, M, G)
     velocities = np.random.normal(0, 1, size=(N_particles, 3)) * (scale * sigma[:, np.newaxis])
+    # velocities = np.random.normal(
+    #     loc=0.0,
+    #     scale=scale*sigma[:,None],   # broadcast to (N,3)
+    #     size=(N_particles,3)
+    # )
+    print("Hello")
 
     # --- Step 3: Assign equal mass to all particles
     masses = np.full(N_particles, M / N_particles)
