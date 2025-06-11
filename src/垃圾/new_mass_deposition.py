@@ -8,12 +8,9 @@ def deposit_ngp(positions, masses, N, box_size, boundary):
     weights_list = []  # NEW: list of weights per particle
 
     for pos, m in zip(positions, masses):
-        #ix = int(np.round(pos[0] / dx))
-        #iy = int(np.round(pos[1] / dx))
-        #iz = int(np.round(pos[2] / dx))
-        ix = int(np.floor(pos[0] / dx))
-        iy = int(np.floor(pos[1] / dx))
-        iz = int(np.floor(pos[2] / dx))
+        ix = int(np.round(pos[0] / dx))
+        iy = int(np.round(pos[1] / dx))
+        iz = int(np.round(pos[2] / dx))
 
         if boundary == 'periodic':
             ix %= N
@@ -118,9 +115,15 @@ def deposit_tsc(positions, masses, N, box_size, boundary):
         if boundary == 'periodic':
             pos = np.mod(pos, box_size)
 
+<<<<<<< HEAD:src/new_mass_deposition.py
         # 2) 轉換到格點座標
         xg, yg, zg = pos / dx
         ix, iy, iz = int(np.floor(xg+0.5)), int(np.floor(yg+0.5)), int(np.floor(zg+0.5))
+=======
+        ix = int(np.floor(xg)) 
+        iy = int(np.floor(yg)) 
+        iz = int(np.floor(zg)) 
+>>>>>>> 27fec63ec12b2d043857dafe9b1294b8e6690774:src/垃圾/new_mass_deposition.py
 
         particle_weights = []
         # 3) 對 27 個相鄰格點計算 TSC 權重
