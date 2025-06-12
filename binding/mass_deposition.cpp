@@ -11,12 +11,14 @@ std::pair< py::array_t<double>, py::list > deposit_ngp(
     double box_size,
     const std::string &boundary)
 {
+    omp_set_num_threads(6);
+    
     auto buf_pos = positions.request();
     if (buf_pos.ndim != 2 || buf_pos.shape[1] != 3) {
         throw std::runtime_error("positions must be shape=(N,3) float64 C-contiguous ndarray");
-    }
+    }1
     auto buf_mass = masses.request();
-    if (buf_mass.ndim != 1 || buf_mass.shape[0] != buf_pos.shape[0]) {
+    if (buf_mass.ndim !=  || buf_mass.shape[0] != buf_pos.shape[0]) {
         throw std::runtime_error("masses must be shape=(N,) float64 C-contiguous ndarray");
     }
 
@@ -43,6 +45,9 @@ std::pair< py::array_t<double>, py::list > deposit_ngp(
     // parallel loop over particles
     #pragma omp parallel for
     for (ssize_t i = 0; i < M; ++i) {
+        if(i == 0)
+            std::cout<<"Total threads: "<<omp_get_num_threads();
+
         double x = pos_ptr[i * cols + 0] / dx;
         double y = pos_ptr[i * cols + 1] / dx;
         double z = pos_ptr[i * cols + 2] / dx;
@@ -97,6 +102,8 @@ std::pair< py::array_t<double>, py::list > deposit_cic(
     double box_size,
     const std::string &boundary)
 {
+    std::cout<<"Total threads: "<<omp_get_num_threads();
+    
     auto buf_pos = positions.request();
     if (buf_pos.ndim != 2 || buf_pos.shape[1] != 3) {
         throw std::runtime_error("positions must be shape=(N,3) float64 C-contiguous ndarray");
@@ -205,6 +212,8 @@ std::pair< py::array_t<double>, py::list > deposit_tsc(
     double box_size,
     const std::string &boundary)
 {
+    std::cout<<"Total threads: "<<omp_get_num_threads();
+
     auto buf_pos = positions.request();
     if (buf_pos.ndim != 2 || buf_pos.shape[1] != 3) {
         throw std::runtime_error("positions must be shape=(N,3) float64 C-contiguous ndarray");

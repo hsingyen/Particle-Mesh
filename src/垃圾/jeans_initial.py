@@ -67,6 +67,12 @@ def create_particles(N_particles, box_size, a, M, mode="stable",r_max=5.0,G=1.0)
 
     sigma = plummer_velocity_dispersion(r, a, M, G)
     velocities = np.random.normal(0, 1, size=(N_particles, 3)) * (scale * sigma[:, np.newaxis])
+    # velocities = np.random.normal(
+    #     loc=0.0,
+    #     scale=scale*sigma[:,None],   # broadcast to (N,3)
+    #     size=(N_particles,3)
+    # )
+    print("Hello")
 
     # --- Step 3: Assign equal mass to all particles
     masses = np.full(N_particles, M / N_particles)

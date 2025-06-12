@@ -1,10 +1,11 @@
 import numpy as np
 from itertools import product
-from poisson_solver import poisson_solver_periodic_safe, poisson_solver_periodic,poisson_solver_isolated, poisson_solver_isolated_green
+from poisson_solver import poisson_solver_periodic_safe, poisson_solver_periodic,poisson_solver_isolated
 from new_mass_deposition import deposit_cic,deposit_ngp,deposit_tsc
-#import example_omp
 
-### acc: compute grid acc => back to particle by weighting => update scheme
+#---------------------------------------------------------------------------------------------------------------#
+#-----------------------------------------ACC calculation--------------------------------------------------------#
+#---------------------------------------------------------------------------------------------------------------#
 
 def compute_grid_acceleration( phi, N, box_size):
     """ compute acceleration at grids"""
@@ -14,7 +15,6 @@ def compute_grid_acceleration( phi, N, box_size):
 
     return grad_phi
 
-"""make inverse interpolation for particle"""
 
 def interpolate_to_particles(grid_field, weights_list):
     """
@@ -46,6 +46,38 @@ def interpolate_to_particles(grid_field, weights_list):
 
     return np.array(particle_values)
 
+
+def compute_phi(positions, masses, N, box_size, dp, solver, soft_len):
+    """
+    Solve Poisson equation from positions and masses via:
+    1. Mass deposition
+    2. Solve Poisson equation
+    """
+
+    boundary = 'periodic' if solver.startswith('periodic') else solver
+
+    # Step 1: Mass deposition
+    if dp == "ngp":
+        rho, weights = deposit_ngp(positions, masses, N, box_size, boundary)
+    elif dp == "cic":
+        rho, weights = deposit_cic(positions, masses, N, box_size, boundary)
+    elif dp == "tsc":
+        rho, weights = deposit_tsc(positions, masses, N, box_size, boundary)
+    else:
+        raise ValueError("Unknown deposition method")
+    
+    # Step 2: Solve Poisson equation
+    if solver == "periodic":
+        phi = poisson_solver_periodic(rho, box_size, G=1.0)
+    elif solver == "isolated":
+        phi = poisson_solver_isolated(rho, box_size,soft_len, G=1.0)
+    elif solver == "periodic_safe":
+        phi = poisson_solver_periodic_safe(rho, box_size, soft_len,G=1.0)
+    else:
+        raise ValueError("Unknown boundary condition")
+
+    return phi,weights
+
 #def compute_acceleration(positions, masses, N, box_size, dp, solver):
 def compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self,soft_len):
     """
@@ -62,50 +94,8 @@ def compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_se
     # Step 3: Interpolate to particles
     acc_particles = interpolate_to_particles(acc_grid, weights)
 
-
-    if subtract_self:
-        # Enforce zero net force to conserve momentum
-        net_force = np.sum(acc_particles * masses[:, np.newaxis], axis=0)
-        correction = net_force / np.sum(masses)
-        acc_particles -= correction
-
     return acc_particles, phi
 
-def compute_phi(positions, masses, N, box_size, dp, solver, soft_len):
-    """
-    Solve Poisson equation from positions and masses via:
-    1. Mass deposition
-    2. Solve Poisson equation
-    """
-
-    boundary = 'periodic' if solver.startswith('periodic') else solver
-
-    # Step 1: Mass deposition
-    if dp == "ngp":
-        rho, weights = deposit_ngp(positions, masses, N, box_size, boundary)
-        #rho, weights = example_omp.deposit_ngp(positions, masses, N, box_size, boundary)
-    elif dp == "cic":
-        rho, weights = deposit_cic(positions, masses, N, box_size, boundary)
-        #rho, weights = example_omp.deposit_cic(positions, masses, N, box_size, boundary)
-    elif dp == "tsc":
-        rho, weights = deposit_tsc(positions, masses, N, box_size, boundary)
-        #rho, weights = example_omp.deposit_tsc(positions, masses, N, box_size, boundary)
-    else:
-        raise ValueError("Unknown deposition method")
-    
-    #print("rho min/max:", np.min(rho), np.max(rho))
-
-    # Step 2: Solve Poisson equation
-    if solver == "periodic":
-        phi = poisson_solver_periodic(rho, box_size, G=1.0)
-    elif solver == "isolated":
-        phi = poisson_solver_isolated(rho, box_size,soft_len, G=1.0)
-    elif solver == "periodic_safe":
-        phi = poisson_solver_periodic_safe(rho, box_size, soft_len,G=1.0)
-    else:
-        raise ValueError("Unknown boundary condition")
-
-    return phi,weights
 
 def nbody_compute_acceleration(positions, masses, N, box_size):
     particle_values = []
@@ -149,13 +139,13 @@ def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtrac
     Perform one KDK (Kick-Drift-Kick) integration step with full acceleration computation.
     """
     boundary = 'periodic' if solver.startswith('periodic') else solver
+    
     # First Kick (half step)
     acc,phi = compute_acceleration(positions, masses, N, box_size, dp, solver, subtract_self,soft_len)
     velocities += 0.5 * dt * acc
 
     # Drift (full step)
     positions += dt * velocities
-    #positions %= box_size  # periodic boundary condition
 
     if boundary == "periodic":
         positions %= box_size
@@ -170,9 +160,6 @@ def kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, subtrac
 
     velocities += 0.5 * dt * acc
     
-    #net_force = np.sum(acc * masses[:, np.newaxis], axis=0)
-    #print("Net force:", net_force)
-
     return positions, velocities,masses, phi
 
 
@@ -181,9 +168,9 @@ def dkd_step(positions, velocities, masses, dt, N, box_size, dp,solver,subtract_
     Perform one DKD (Drift-Kick-Drift) integration step with acceleration computation.
     """
     boundary = 'periodic' if solver.startswith('periodic') else solver
+    
     # First Drift (half step)
     positions += 0.5 * dt * velocities
-    #positions %= box_size  # periodic boundary condition
     if boundary == "periodic":
         positions %= box_size
     elif boundary == "isolated":
@@ -192,15 +179,12 @@ def dkd_step(positions, velocities, masses, dt, N, box_size, dp,solver,subtract_
         velocities = velocities[mask]
         masses = masses[mask]
 
-    # Compute acceleration at updated positions
-    acc,phi = compute_acceleration(positions, masses, N, box_size, dp,solver,subtract_self,soft_len)
-
     # Kick (full step)
+    acc,phi = compute_acceleration(positions, masses, N, box_size, dp,solver,subtract_self,soft_len)
     velocities += dt * acc
 
     # Second Drift (half step)
     positions += 0.5 * dt * velocities
-    #positions %= box_size  # periodic boundary condition
     if boundary == "periodic":
         positions %= box_size
     elif boundary == "isolated":
@@ -239,10 +223,8 @@ def rk4_step(positions, velocities, masses, dt, N, box_size,dp, solver,subtract_
     k4x = dt * (velocities + k3v)
     k4v = dt * a4
 
-    new_pos = (positions +
-               (k1x + 2*k2x + 2*k3x + k4x)/6.0)
-    new_vel = velocities + \
-              (k1v + 2*k2v + 2*k3v + k4v)/6.0
+    new_pos = positions +(k1x + 2*k2x + 2*k3x + k4x)/6.0
+    new_vel = velocities + (k1v + 2*k2v + 2*k3v + k4v)/6.0
     
     if boundary == "periodic":
         new_pos %= box_size
@@ -257,9 +239,10 @@ def rk4_step(positions, velocities, masses, dt, N, box_size,dp, solver,subtract_
 
 
 
+#---------------------------------------------------------------------------------------------------------------#
+#------------------------------------------------Hermite--------------------------------------------------------#
+#---------------------------------------------------------------------------------------------------------------#
 
-
-#Hermite
 
 def predict_all(particles, t_target):
     """Return predicted r and v for all particles at future time t_target."""

@@ -95,7 +95,7 @@ def poisson_solver_isolated(rho, box_size, soft_len, G=1.0):
 
     rho_k = np.fft.fftn(rho_pad)
 
-    k     = 2.0 * np.pi * np.fft.fftfreq(N2, d=box_size / N)
+    k     = 2.0 * np.pi * np.fft.fftfreq(N2, d=dx)
     kx, ky, kz = np.meshgrid(k, k, k, indexing="ij")
     k2    = kx**2 + ky**2 + kz**2
     k2[0, 0, 0] = 1.0

@@ -115,9 +115,9 @@ def deposit_tsc(positions, masses, N, box_size, boundary):
         if boundary == 'periodic':
             pos = np.mod(pos, box_size)
 
-        ix = int(np.floor(xg)) 
-        iy = int(np.floor(yg)) 
-        iz = int(np.floor(zg)) 
+        # 2) 轉換到格點座標
+        xg, yg, zg = pos / dx
+        ix, iy, iz = int(np.floor(xg+0.5)), int(np.floor(yg+0.5)), int(np.floor(zg+0.5))
 
         particle_weights = []
         # 3) 對 27 個相鄰格點計算 TSC 權重
