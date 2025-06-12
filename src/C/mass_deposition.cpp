@@ -1,5 +1,5 @@
 #include "mass_deposition.hpp"
-#include <mpi.h>
+// #include <mpi.h>
 #include <omp.h>
 #include <cmath>
 
@@ -22,14 +22,14 @@ GridDepositResult deposit_cic(
         double yg = pos[1] / dx;
         double zg = pos[2] / dx;
 
-        int ix = static_cast<int>(std::floor(xg));
-        int iy = static_cast<int>(std::floor(yg));
-        int iz = static_cast<int>(std::floor(zg));
+        int ix = static_cast<int>(std::floor(xg-0.5));
+        int iy = static_cast<int>(std::floor(yg-0.5));
+        int iz = static_cast<int>(std::floor(zg-0.5));
 
-        double dx1 = xg - ix;
-        double dy1 = yg - iy;
-        double dz1 = zg - iz;
-
+        double dx1 = xg -0.5 - ix;
+        double dy1 = yg -0.5 - iy;
+        double dz1 = zg -0.5 - iz;
+ 
         double w[8] = {
             (1-dx1)*(1-dy1)*(1-dz1), dx1*(1-dy1)*(1-dz1),
             (1-dx1)*dy1*(1-dz1), (1-dx1)*(1-dy1)*dz1,
@@ -84,9 +84,9 @@ GridDepositResult deposit_ngp(
     for (size_t p = 0; p < positions.size(); ++p) {
         const auto& pos = positions[p];
         double m = masses[p];
-        int ix = static_cast<int>(std::round(pos[0] / dx));
-        int iy = static_cast<int>(std::round(pos[1] / dx));
-        int iz = static_cast<int>(std::round(pos[2] / dx));
+        int ix = static_cast<int>(std::floor(pos[0] / dx));
+        int iy = static_cast<int>(std::floor(pos[1] / dx));
+        int iz = static_cast<int>(std::floor(pos[2] / dx));
         if (boundary == "periodic") {
             ix = (ix % N + N) % N;
             iy = (iy % N + N) % N;
@@ -135,16 +135,16 @@ GridDepositResult deposit_tsc(
             }
         }
         double xg = pos[0]/dx, yg = pos[1]/dx, zg = pos[2]/dx;
-        int ix = static_cast<int>(std::floor(xg+0.5));
-        int iy = static_cast<int>(std::floor(yg+0.5));
-        int iz = static_cast<int>(std::floor(zg+0.5));
+        int ix = static_cast<int>(std::floor(xg));
+        int iy = static_cast<int>(std::floor(yg));
+        int iz = static_cast<int>(std::floor(zg));
         WeightList local;
         local.reserve(27);
         for (int dx_idx=-1; dx_idx<=1; ++dx_idx)
         for (int dy_idx=-1; dy_idx<=1; ++dy_idx)
         for (int dz_idx=-1; dz_idx<=1; ++dz_idx) {
             int i = ix+dx_idx, j = iy+dy_idx, k = iz+dz_idx;
-            double w = tsc_w(xg - (ix+dx_idx)) * tsc_w(yg - (iy+dy_idx)) * tsc_w(zg - (iz+dz_idx));
+            double w = tsc_w(xg -0.5 - (ix+dx_idx)) * tsc_w(yg -0.5 - (iy+dy_idx)) * tsc_w(zg -0.5 - (iz+dz_idx));
             if (w == 0.0) continue;
             if (boundary == "periodic") {
                 i = (i % N + N) % N;
