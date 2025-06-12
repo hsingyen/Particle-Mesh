@@ -8,17 +8,16 @@ from mpl_toolkits.mplot3d import Axes3D
 from jeans_initial import create_particles_single, create_particles_double
 
 # === Simulation parameters ===
-N = 128  # Grid size: N x N x N
+N = 128                      # Grid size: N x N x N
 box_size = 1.0
-N_particles =  10000 #10000
+N_particles =  10000         # 10000
 center = N // 2
-dt = 0.001
-n_steps = 10  #200
-dp = 'ngp'  # 'ngp', 'cic', or 'tsc'
-solver = 'periodic' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
-integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
-softening = 0.0
-dx = box_size/N
+dt = 2e-4
+n_steps = 10                 # 200
+dp = 'ngp'                   # 'ngp', 'cic', or 'tsc'
+solver = 'periodic'          # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
+integrator = 'kdk'           # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
+softening = 0.0              #  box_size/N
 mode = 'stable'
 a = 0.005
 
