@@ -9,15 +9,15 @@ from scipy.stats import norm
 # === Simulation parameters ===
 N = 256  # Grid size: N x N x N
 box_size = 1.0
-N_particles =  100000 #10000
+N_particles =  1000 #10000
 center = N // 2
 dt = 0.001
 n_steps = 10000  #200
 dp = 'tsc'  # 'ngp', 'cic', or 'tsc'
-solver = 'periodic' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
+solver = 'isolated' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
 integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
-self_force = True          # True or False
-softening = 0.0
+self_force = False          # True or False
+softening = 0.0001
 velocity_scale = 2   #jeans equation, scale the velocity to get Q_J
 a = 0.005
 
@@ -25,7 +25,8 @@ def compute_total_energy(positions, velocities, masses, N, box_size,dp,solver):
     """Compute total energy (kinetic + potential) of the system."""
     KE = 0.5 * np.sum(masses * np.sum(velocities**2, axis=1))
 
-    phi,weights = compute_phi(positions, masses, N, box_size, dp, solver, soft_len = softening)
+    #phi,weights = compute_phi(positions, masses, N, box_size, dp, solver, soft_len = softening)
+    phi, weights= deposit_phi_tsc(positions, phi_plummer, N, box_size, boundary = "periodic")
     particle_values = []
     for weight in weights:
         phi_par = 0.0  # use scalar
@@ -45,7 +46,7 @@ def plot_potential(phi,title):
     phi = phi[:,:,center].T
     fig3, ax3 = plt.subplots()
     im = ax3.imshow(phi, extent=[0, box_size, 0, box_size], origin='lower',
-                        vmin=-10, vmax=0, cmap='viridis')
+                        vmin=np.min(phi), vmax=np.max(phi),cmap='viridis')
     cbar_potential = plt.colorbar(im, ax=ax3)    # add color bar
     cbar_potential.set_label("Gravitational Potential")
     #catter = ax3.scatter(positions[:,0], positions[:,1], s=1, color='white')
@@ -161,9 +162,9 @@ def deposit_phi_tsc(positions, phi, N, box_size, boundary):
     return phi_grid, weights_list
 
 
-phi = plummer_potential_from_positions(positions)  #in particle 
-phi_grid, weighted= deposit_phi_tsc(positions, phi, N, box_size, boundary = "periodic")
-#print(phi)
+phi_plummer = plummer_potential_from_positions(positions)  #in particle 
+phi_grid, weighted= deposit_phi_tsc(positions, phi_plummer, N, box_size, boundary = "periodic")
+print(phi_plummer)
 plot_potential(phi_grid,"analytic")
 acc_plummer = compute_grid_acceleration(phi_grid, N, box_size)
 acc_plummer_par = interpolate_to_particles(acc_plummer, weighted)
@@ -189,7 +190,7 @@ phi_par = interpolate_scalarfield(phi_poisson, weighted) #inparticle
 acc_grid = compute_grid_acceleration(phi_poisson,N, box_size)
 acc_par = interpolate_to_particles(acc_grid, weighted)
 accs_par = np.sqrt(acc_par[:,0]**2+acc_par[:,1]**2+acc_par[:,2]**2)
-#print(phi_par)
+print(phi_par)
 
 # === error analyse ===
 center_pos = np.array([box_size / 2] * 3)
@@ -197,7 +198,7 @@ r = np.linalg.norm(positions - center_pos, axis=1)
 
 mask = r >= 0.01
 r_valid = r[mask]
-phi_true = phi[mask]
+phi_true = phi_plummer[mask]
 phi_numeric = phi_par[mask]
 #acc_true = accs_plummer[mask]
 #acc_numeric = accs_par[mask]
@@ -219,3 +220,4 @@ print(f"Mean error     : {np.mean(error):.4e}")
 print(f"Max error      : {np.max(error):.4e}")
 print(f"Min error      : {np.min(error):.4e}")
 print(f"Std deviation  : {np.std(error):.4e}")
+
