@@ -9,6 +9,8 @@
 #include <ostream>
 #include <algorithm>
 
+constexpr int POS_SEED = 42;
+constexpr int VEL_SEED = 1337;
 using ParticleArray = std::vector<std::array<double, 3>>;
 using MassArray = std::vector<double>;
 
@@ -20,7 +22,7 @@ namespace {
 
 ParticleArray create_plummer_positions(int N, double box_size, double a, double shift) {
     ParticleArray positions(N);
-    std::mt19937 gen(std::random_device{}());
+    std::mt19937 gen(POS_SEED);
     std::uniform_real_distribution<double> uni(0.0, 1.0);
 
     for (int i = 0; i < N; ++i) {
@@ -50,7 +52,7 @@ ParticleArray create_plummer_velocities(
 {
     int N = r.size();
     ParticleArray velocities(N);
-    std::mt19937 gen(std::random_device{}());
+    std::mt19937 gen(VEL_SEED);
     std::normal_distribution<double> normal(0.0, 1.0);
 
     double scale = (mode == "stable" ? 1.0 : (mode == "contract" ? 0.5 : (mode == "expand" ? 1.5 : -1.0)));
