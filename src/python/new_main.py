@@ -14,12 +14,12 @@ box_size = 1.0
 N_particles =  100         # 10000
 center = N // 2
 dt = 2e-4
-n_steps = 200              # 200
-dp = 'cic'                 # 'ngp', 'cic', or 'tsc'
-solver = 'isolated'        # 'isolated', 'periodic 
+n_steps = 100              # 200
+dp = 'ngp'                 # 'ngp', 'cic', or 'tsc'
+solver = 'periodic'        # 'isolated', 'periodic 
 integrator = 'dkd'         # 'kdk' or 'dkd' or 'rk4' 
 dx = box_size/N
-mode = 'contract'          #'stable' or contract or expand
+mode = 'stable'
 a = 0.05
 
 if solver == 'isolated':
@@ -68,7 +68,17 @@ def compute_total_energy(positions, velocities, masses, N, box_size,dp,solver, G
     PE = 0.5*np.sum(masses*particle_values)
     return KE, PE, KE+PE
 
-
+def compute_energies_direct(x, v, m, G=1.0, softening=1e-5):
+    #can be removed
+    N = len(m)
+    KE = 0.5 * np.sum(m * np.sum(v**2, axis=1))
+    PE = 0.0
+    for i in range(N):
+        for j in range(i+1, N):
+            dx = x[i] - x[j]
+            r2 = np.dot(dx, dx) + softening**2
+            PE -= G * m[i] * m[j] / np.sqrt(r2)
+    return KE, PE, KE + PE
 
 
 # === main simulation ===
