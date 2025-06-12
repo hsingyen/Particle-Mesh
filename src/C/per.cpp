@@ -13,13 +13,13 @@ int flatten_index(const IndexTriple& idx, int N) {
 
 int main() {
     int num_threads = 8; 
-    omp_set_num_threads(num_threads);
+    //omp_set_num_threads(num_threads);
     std::cout << "Using " << num_threads << " threads." << std::endl;
 
     // === Simulation Parameters ===
-    const int    N           = 512;
+    const int    N           = 256;
     const double box_size    = 1.0;
-    const int    N_particles = 5000;
+    const int    N_particles = 20000;
     const double dt          = 2e-4;
     const int    n_steps     = 200;
     const std::string dp     = "tsc";
@@ -60,6 +60,7 @@ int main() {
 
     std::cout << dp << "+" << integrator << "+" << solver << ": N = " << N << ", N_particles = " << N_particles << std::endl;
     std::cout << "Time taken: " << (end - start) << " seconds" << std::endl;
+    std::cout << "Average per step: " << (end - start) / n_steps << " seconds" << std::endl;
 
     return 0;
 }
