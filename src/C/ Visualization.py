@@ -50,37 +50,45 @@ particle_frames = particle_frames[:n_frames]
 steps           = steps[:n_frames]
 
 # === Animation: Potential heatmap + particle scatter ===
-def animate_PP(pot_frames, part_frames):
-    fig, (ax_pot, ax_part) = plt.subplots(1, 2, figsize=(10,4))
+def animate_PP(pot_frames, part_frames, box_size, dp, solver):
+    fig, ax = plt.subplots(figsize=(6, 5))
 
-    im = ax_pot.imshow(
+    # Display potential heatmap
+    im = ax.imshow(
         pot_frames[0], origin='lower',
         extent=[0, box_size, 0, box_size],
-        vmin=pot_frames.min(), vmax=pot_frames.max(),
+        vmin=np.min(pot_frames), vmax=np.max(pot_frames),
         cmap='viridis'
     )
-    ax_pot.set_title("Potential")
-    ax_pot.set_xlabel("x"); ax_pot.set_ylabel("y")
-    cbar = fig.colorbar(im, ax=ax_pot)
-    cbar.set_label("Φ")
+    cbar = plt.colorbar(im, ax=ax)
+    cbar.set_label("Gravitational Potential")
 
-    scat = ax_part.scatter(
-        part_frames[0][:,0], part_frames[0][:,1],
-        s=5, c='white', edgecolors='black', linewidths=0.2
+    # Overlay particle positions
+    scat = ax.scatter(
+        part_frames[0][:, 0], part_frames[0][:, 1],
+        s=1, c='white'
     )
-    ax_part.set_xlim(0,box_size); ax_part.set_ylim(0,box_size)
-    ax_part.set_title("Particles")
-    ax_part.set_xlabel("x"); ax_part.set_ylabel("y")
+
+    ax.set_xlim(0, box_size)
+    ax.set_ylim(0, box_size)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    title = ax.set_title("Particles + Potential at Frame 0")
+
+    plt.tight_layout()
 
     def update(frame):
         im.set_data(pot_frames[frame])
         scat.set_offsets(part_frames[frame])
-        return im, scat
+        title.set_text(f"Particles + Potential at Frame {frame}")
+        return im, scat, title
 
     ani = animation.FuncAnimation(
-        fig, update, frames=n_frames, interval=200, blit=False
+        fig, update, frames=len(pot_frames),
+        interval=200, blit=False
     )
-    out_gif = f"PP_anim_{dp}_{solver}.gif"
+
+    out_gif = os.path.join(BASE_DIR, f"PP_ani_{dp}_{solver}.gif")
     ani.save(out_gif, writer=PillowWriter(fps=5))
     print(f"Saved animation: {out_gif}")
     plt.close(fig)
@@ -120,6 +128,6 @@ def plot_momentum(log_data):
 # === Main ===
 if __name__ == "__main__":
     log_data = pd.read_csv(log_csv)
-    animate_PP(pot_frames, particle_frames)
+    animate_PP(pot_frames, particle_frames, box_size, dp, solver)
     plot_energy(log_data)
     plot_momentum(log_data)
