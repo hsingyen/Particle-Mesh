@@ -10,6 +10,8 @@ using ParticleArray = std::vector<std::array<double,3>>;
 using MassArray     = std::vector<double>;
 using WeightList    = std::vector<std::pair<IndexTriple,double>>;
 using WeightsArray  = std::vector<WeightList>;
+using ParticleAccel = std::vector<std::array<double, 3>>;
+
 
 // 加速度計算結果：每顆粒子的加速度 + 網格上的位勢
 struct AccelResult {
