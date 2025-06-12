@@ -8,9 +8,11 @@
 #include "mass_deposition.hpp"
 #include "poisson_solver.hpp"
 
+
 inline int idx3(int i, int j, int k, int N) {
     return (i * N + j) * N + k;
 }
+
 
 struct StepResult {
     std::vector<std::array<double,3>> positions;

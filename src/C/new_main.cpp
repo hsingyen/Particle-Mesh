@@ -6,9 +6,14 @@
 #include <tuple>
 #include <cmath>
 
+
+int flatten_index(const IndexTriple& idx, int N) {
+    return idx.x * N * N + idx.y * N + idx.z;
+}
+
 int main() {
     // === Simulation parameters ===
-    const int N = 16;
+    const int N = 128;
     const double box_size = 1.0;
     const int N_particles = 100;
     const double dt = 2e-4;
@@ -17,65 +22,69 @@ int main() {
     const std::string solver = "periodic";
     const std::string integrator = "dkd";
     const std::string mode = "stable";
-    const double a = 0.05;
+    const double a = 0.005;
     const double G = 1.0;
+    const double soft_len = 0.0;
 
     // === Initialization ===
     ParticleArray positions, velocities;
     MassArray masses;
     std::tie(positions, velocities, masses) = create_particles_single(N_particles, box_size, a, 1.0, mode, solver, G);
-    
-    std::cout << "[DEBUG] Number of particles: " << positions.size() << std::endl;
 
-    for (size_t i = 0; i < std::min<size_t>(5, velocities.size()); ++i) {
-        const auto& v = velocities[i];
-        std::cout << "[DEBUG] v[" << i << "] = ("
-                << v[0] << ", " << v[1] << ", " << v[2] << ")\n";
+    std::ofstream log_file("simulation_output.csv");
+    log_file << "step,KE,PE,Total,Px,Py,Pz\n";
 
-        double v2 = v[0]*v[0] + v[1]*v[1] + v[2]*v[2];
-        if (!std::isfinite(v2)) {
-            std::cerr << "NaN in velocity at particle " << i << ": v = ("
-                    << v[0] << "," << v[1] << "," << v[2] << ")\n";
-        }
-    }
-    // === Initial Energy and Momentum ===
-    auto res = compute_acceleration(positions, masses, N, box_size, dp, solver, false, 0.0);
-    double KE = 0.0, PE = 0.0;
-    for (size_t i = 0; i < N_particles; ++i) {
-        KE += 0.5 * masses[i] * (velocities[i][0]*velocities[i][0] + velocities[i][1]*velocities[i][1] + velocities[i][2]*velocities[i][2]);
-    }
-    // NOTE: Skipping potential energy computation from weights for now 
+    std::ofstream pos_file("particle_positions.csv");
+    pos_file << "step,id,x,y,z\n";
 
-    std::array<double,3> P_total = {0.0, 0.0, 0.0};
-    for (size_t i = 0; i < N_particles; ++i)
-        for (int d = 0; d < 3; ++d)
-            P_total[d] += masses[i] * velocities[i][d];
-
-    std::cout << "Initial KE = " << KE << "\n";
-    std::cout << "Initial Momentum = (" << P_total[0] << ", " << P_total[1] << ", " << P_total[2] << ")\n";
-
-    // === Time evolution ===
     for (int step = 0; step < n_steps; ++step) {
         StepResult step_result;
         if (integrator == "kdk") {
-            step_result = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, false, 0.0);
+            step_result = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver, false, soft_len);
         } else if (integrator == "dkd") {
-            step_result = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver, false, 0.0);
+            step_result = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver, false, soft_len);
         } else if (integrator == "rk4") {
-            step_result = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver, false, 0.0, G);
+            step_result = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver, false, soft_len, G);
         }
 
         positions = std::move(step_result.positions);
         velocities = std::move(step_result.velocities);
         masses = std::move(step_result.masses);
 
-        // Diagnostics
-        double KE_step = 0.0;
+        // === Energy & Momentum Diagnostics ===
+        double KE = 0.0, PE = 0.0;
+        std::array<double, 3> P = {0.0, 0.0, 0.0};
+
         for (size_t i = 0; i < N_particles; ++i) {
-            KE_step += 0.5 * masses[i] * (velocities[i][0]*velocities[i][0] + velocities[i][1]*velocities[i][1] + velocities[i][2]*velocities[i][2]);
+            const auto& v = velocities[i];
+            KE += 0.5 * masses[i] * (v[0]*v[0] + v[1]*v[1] + v[2]*v[2]);
+            for (int d = 0; d < 3; ++d)
+                P[d] += masses[i] * v[d];
         }
-        std::cout << "Step " << step << "\t KE = " << KE_step << "\n";
+
+        auto [phi_flat, weights_list] = compute_phi(positions, masses, N, box_size, dp, solver, soft_len);
+
+        for (size_t i = 0; i < N_particles; ++i) {
+            double phi_particle = 0.0;
+            for (const auto& [idx, weight] : weights_list[i]) {
+                int flat_idx = flatten_index(idx, N);
+                phi_particle += weight * phi_flat[flat_idx];
+            }
+            PE += masses[i] * phi_particle;
+        }
+
+        PE *= 0.5;
+        double total = KE + PE;
+
+        std::cout << "Step " << step << "  KE = " << KE << ", PE = " << PE << ", Total = " << total << "\n";
+        log_file << step << "," << KE << "," << PE << "," << total << ","
+                 << P[0] << "," << P[1] << "," << P[2] << "\n";
+
+        for (size_t i = 0; i < N_particles; ++i)
+            pos_file << step << "," << i << "," << positions[i][0] << "," << positions[i][1] << "," << positions[i][2] << "\n";
     }
 
+    log_file.close();
+    pos_file.close();
     return 0;
 }
