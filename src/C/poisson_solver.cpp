@@ -2,148 +2,181 @@
 #include "poisson_solver.hpp"
 #include <fftw3.h>
 #include <cmath>
-#include <algorithm>
-// #include <mpi.h>
 #include <omp.h>
 
-void poisson_solver_periodic(const std::vector<double>& rho,
-                             std::vector<double>& phi,
-                             int N,
-                             double box_size,
-                             double G) {
-    int real_size = N * N * N;
-    int comp_size = N * N * (N/2 + 1);
-
-    double* rho_in = fftw_alloc_real(real_size);
-    fftw_complex* rho_k = fftw_alloc_complex(comp_size);
-    fftw_complex* phi_k = fftw_alloc_complex(comp_size);
-    double* phi_out = fftw_alloc_real(real_size);
-
-    std::copy(rho.begin(), rho.end(), rho_in);
-
-    auto plan_r2c = fftw_plan_dft_r2c_3d(N, N, N, rho_in, rho_k, FFTW_ESTIMATE);
-    auto plan_c2r = fftw_plan_dft_c2r_3d(N, N, N, phi_k, phi_out, FFTW_ESTIMATE);
-    fftw_execute(plan_r2c);
-
-    std::vector<double> kfreq(N);
-    for (int i = 0; i < N; ++i) {
-        kfreq[i] = 2.0 * M_PI * ((i <= N/2) ? i : i - N) / box_size;
-    }
-
-    #pragma omp parallel for collapse(3)
-    for (int i = 0; i < N; ++i) {
-        for (int j = 0; j < N; ++j) {
-            for (int k = 0; k <= N/2; ++k) {
-                int idx = (i * N + j) * (N/2 + 1) + k;
-                double kv2 = (idx == 0)
-                    ? 1.0
-                    : (kfreq[i]*kfreq[i] + kfreq[j]*kfreq[j] + kfreq[k]*kfreq[k]);
-                double factor = -4.0 * M_PI * G / kv2;
-                phi_k[idx][0] = rho_k[idx][0] * factor;
-                phi_k[idx][1] = rho_k[idx][1] * factor;
-                if (idx == 0) {
-                    phi_k[idx][0] = 0.0;
-                    phi_k[idx][1] = 0.0;
-                }
-            }
-        }
-    }
-
-    fftw_execute(plan_c2r);
-
-    #pragma omp parallel for
-    for (int i = 0; i < real_size; ++i) {
-        phi[i] = phi_out[i] / static_cast<double>(real_size);
-    }
-
-    fftw_destroy_plan(plan_r2c);
-    fftw_destroy_plan(plan_c2r);
-    fftw_free(rho_in);
-    fftw_free(rho_k);
-    fftw_free(phi_k);
-    fftw_free(phi_out);
+// Helper to flatten 3D index
+inline int idx3(int i, int j, int k, int N) {
+    return (i * N + j) * N + k;
 }
 
-std::vector<std::complex<double>> green(int N, double box_size) {
-    int n2 = 2 * N;
-    int real_size = n2 * n2 * n2;
-    int comp_size = n2 * n2 * (n2/2 + 1);
+std::vector<double> poisson_solver_periodic(
+    const std::vector<double>& rho,
+    int N,
+    double box_size,
+    double G
+) {
+    int size = N*N*N;
+    // 1) copy density into FFTW input
+    std::vector<double> in(rho);
+    std::vector<std::complex<double>> out(size);
 
-    std::vector<double> g(real_size);
-    #pragma omp parallel for collapse(3)
-    for (int i = 0; i < n2; ++i) {
-        for (int j = 0; j < n2; ++j) {
-            for (int k = 0; k < n2; ++k) {
-                int idx = (i * n2 + j) * n2 + k;
-                int ii = std::min(i, n2 - i);
-                int jj = std::min(j, n2 - j);
-                int kk = std::min(k, n2 - k);
-                double r = std::sqrt(ii*ii + jj*jj + kk*kk);
-                g[idx] = (r == 0.0 ? 0.0 : -1.0 / r);
-            }
+    // 2) forward FFT
+    fftw_plan plan_f = fftw_plan_dft_r2c_3d(
+        N, N, N,
+        in.data(),
+        reinterpret_cast<fftw_complex*>(out.data()),
+        FFTW_ESTIMATE
+    );
+    fftw_execute(plan_f);
+    fftw_destroy_plan(plan_f);
+
+    // 3) build k^2 and divide
+    double factor = 2.0 * M_PI / (box_size / N);
+    // note: ffwt_r2c packs k-space as [0..N-1][0..N-1][0..N/2]
+    int nkz = N/2 + 1;
+#pragma omp parallel for collapse(3)
+    for(int i=0;i<N;i++){
+      for(int j=0;j<N;j++){
+        for(int k=0;k<nkz;k++){
+          int index = (i*N + j)*nkz + k;
+          double kx = factor * ((i<=N/2)? i : i-N);
+          double ky = factor * ((j<=N/2)? j : j-N);
+          double kz = factor * k;
+          double k2 = kx*kx + ky*ky + kz*kz;
+          if(k==0 && i==0 && j==0){
+            out[index] = 0.0;
+          } else {
+            out[index] *= (-4.0 * M_PI * G) / k2;
+          }
         }
+      }
     }
 
-    double* g_in = fftw_alloc_real(real_size);
-    fftw_complex* Gk_c = fftw_alloc_complex(comp_size);
-    auto plan = fftw_plan_dft_r2c_3d(n2, n2, n2, g_in, Gk_c, FFTW_ESTIMATE);
-    std::copy(g.begin(), g.end(), g_in);
-    fftw_execute(plan);
+    // 4) inverse FFT
+    std::vector<double> phi(size);
+    fftw_plan plan_b = fftw_plan_dft_c2r_3d(
+        N, N, N,
+        reinterpret_cast<fftw_complex*>(out.data()),
+        phi.data(),
+        FFTW_ESTIMATE
+    );
+    fftw_execute(plan_b);
+    fftw_destroy_plan(plan_b);
 
-    std::vector<std::complex<double>> Gk(comp_size);
-    for (int i = 0; i < comp_size; ++i) {
-        Gk[i] = {Gk_c[i][0], Gk_c[i][1]};
+    // 5) normalize (FFTW does unnormalized transforms)
+    double norm = 1.0/size;
+#pragma omp parallel for
+    for(int i=0;i<size;i++){
+      phi[i] *= norm;
     }
 
-    fftw_destroy_plan(plan);
-    fftw_free(g_in);
-    fftw_free(Gk_c);
-    return Gk;
+    return phi;
 }
 
-void poisson_solver_isolated(const std::vector<double>& rho,
-                             const std::vector<std::complex<double>>& Gk,
-                             std::vector<double>& phi,
-                             int N,
-                             double box_size,
-                             double G) {
-    int n2 = 2 * N;
-    int real_size2 = n2 * n2 * n2;
-    int comp_size2 = n2 * n2 * (n2/2 + 1);
+std::vector<double> poisson_solver_isolated(
+    const std::vector<double>& rho,
+    const std::vector<std::complex<double>>& G_k,
+    int N,
+    double box_size,
+    double G
+) {
+    int N2 = 2*N;
+    int size_pad = N2*N2*N2;
+    int nkz = N2/2 + 1;
 
-    double* rho_in = fftw_alloc_real(real_size2);
-    fftw_complex* rho_k = fftw_alloc_complex(comp_size2);
-    fftw_complex* phi_k = fftw_alloc_complex(comp_size2);
-    double* phi_out = fftw_alloc_real(real_size2);
-
-    std::fill(rho_in, rho_in + real_size2, 0.0);
-    #pragma omp parallel for
-    for (int i = 0; i < N*N*N; ++i) rho_in[i] = rho[i];
-
-    auto plan_r2c = fftw_plan_dft_r2c_3d(n2, n2, n2, rho_in, rho_k, FFTW_ESTIMATE);
-    auto plan_c2r = fftw_plan_dft_c2r_3d(n2, n2, n2, phi_k, phi_out, FFTW_ESTIMATE);
-
-    fftw_execute(plan_r2c);
-    #pragma omp parallel for
-    for (int i = 0; i < comp_size2; ++i) {
-        auto r = std::complex<double>(rho_k[i][0], rho_k[i][1]);
-        auto ph = r * Gk[i];
-        phi_k[i][0] = ph.real();
-        phi_k[i][1] = ph.imag();
+    // 1) pad rho
+    std::vector<double> in(size_pad, 0.0);
+#pragma omp parallel for collapse(3)
+    for(int i=0;i<N;i++){
+      for(int j=0;j<N;j++){
+        for(int k=0;k<N;k++){
+          in[idx3(i,j,k,N2)] = rho[idx3(i,j,k,N)];
+        }
+      }
     }
 
-    fftw_execute(plan_c2r);
-    double norm = static_cast<double>(real_size2) * (box_size / N);
-    #pragma omp parallel for collapse(3)
-    for (int i = 0; i < N; ++i)
-        for (int j = 0; j < N; ++j)
-            for (int k = 0; k < N; ++k)
-                phi[(i*N+j)*N+k] = phi_out[(i*n2+j)*n2+k] / norm;
+    // 2) forward FFT
+    std::vector<std::complex<double>> rho_k(size_pad);
+    fftw_plan plan_f = fftw_plan_dft_r2c_3d(
+        N2, N2, N2,
+        in.data(),
+        reinterpret_cast<fftw_complex*>(rho_k.data()),
+        FFTW_ESTIMATE
+    );
+    fftw_execute(plan_f);
+    fftw_destroy_plan(plan_f);
 
-    fftw_destroy_plan(plan_r2c);
-    fftw_destroy_plan(plan_c2r);
-    fftw_free(rho_in);
-    fftw_free(rho_k);
-    fftw_free(phi_k);
-    fftw_free(phi_out);
+    // 3) multiply by Green’s function in k-space
+#pragma omp parallel for
+    for(int idx=0; idx < (int)rho_k.size(); idx++){
+      rho_k[idx] *= G_k[idx];
+    }
+
+    // 4) inverse FFT
+    std::vector<double> phi_pad(size_pad);
+    fftw_plan plan_b = fftw_plan_dft_c2r_3d(
+        N2, N2, N2,
+        reinterpret_cast<fftw_complex*>(rho_k.data()),
+        phi_pad.data(),
+        FFTW_ESTIMATE
+    );
+    fftw_execute(plan_b);
+    fftw_destroy_plan(plan_b);
+
+    // 5) normalize and extract
+    double norm = 1.0/(dx*dx)/size_pad;  // account for volume element and FFT scaling
+#pragma omp parallel for
+    for(int i=0;i<size_pad;i++){
+      phi_pad[i] *= norm * (4.0*M_PI*G);
+    }
+
+    std::vector<double> phi(N*N*N);
+#pragma omp parallel for collapse(3)
+    for(int i=0;i<N;i++){
+      for(int j=0;j<N;j++){
+        for(int k=0;k<N;k++){
+          phi[idx3(i,j,k,N)] = phi_pad[idx3(i,j,k,N2)];
+        }
+      }
+    }
+
+    return phi;
+}
+
+std::vector<std::complex<double>> compute_green_ft(
+    int N,
+    double box_size
+) {
+    int N2 = 2*N;
+    int size = N2*N2*N2;
+    std::vector<double> g(size);
+    double dx = box_size / N;
+
+    // 1) fill real-space Green’s function
+#pragma omp parallel for collapse(3)
+    for(int i=0; i < N2; i++){
+      for(int j=0; j < N2; j++){
+        for(int k=0; k < N2; k++){
+          int ii = std::min(i, N2 - i);
+          int jj = std::min(j, N2 - j);
+          int kk = std::min(k, N2 - k);
+          double r = std::sqrt(ii*ii + jj*jj + kk*kk)
+          if(r == 0) g[idx3(i,j,k,N2)] = 0.0;
+          else       g[idx3(i,j,k,N2)] = -1.0 / r;
+        }
+      }
+    }
+
+    // 2) FFT to get G_k
+    std::vector<std::complex<double>> G_k(size);
+    fftw_plan plan_f = fftw_plan_dft_r2c_3d(
+        N2, N2, N2,
+        g.data(),
+        reinterpret_cast<fftw_complex*>(G_k.data()),
+        FFTW_ESTIMATE
+    );
+    fftw_execute(plan_f);
+    fftw_destroy_plan(plan_f);
+
+    return G_k;
 }
