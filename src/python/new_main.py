@@ -9,7 +9,7 @@ from jeans_initial import create_particles_single, create_particles_double
 from poisson_solver import green
 
 # === Simulation parameters ===
-N = 16                     # Grid size: N x N x N
+N = 128                    # Grid size: N x N x N
 box_size = 1.0
 N_particles =  100         # 10000
 center = N // 2
@@ -20,7 +20,7 @@ solver = 'periodic'        # 'isolated', 'periodic
 integrator = 'dkd'         # 'kdk' or 'dkd' or 'rk4' 
 dx = box_size/N
 mode = 'stable'
-a = 0.05
+a = 0.005
 
 if solver == 'isolated':
     G_k = green(N, box_size)

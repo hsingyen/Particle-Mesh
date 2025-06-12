@@ -30,7 +30,6 @@ ParticleArray create_plummer_positions(int N, double box_size, double a, double 
         double temp = std::pow(u, -2.0/3.0) - 1.0;
         double r = a / std::sqrt(temp);     // Plummer radius
 
-        std::cout << "[DEBUG] u = " << u << ", r = " << r << std::endl;
 
         // Sample direction uniformly on the sphere
         double theta = std::acos(1 - 2 * uni(gen));
