@@ -1,42 +1,25 @@
 import numpy as np
 
-def poisson_solver_periodic(rho, box_size, G=1.0):
+def poisson_solver_periodic(rho, box_size, G_k, G=1.0):
     """
-    Solve Poisson equation with periodic boundary conditions using FFT.
-
-    Parameters
-    ----------
-    rho : ndarray
-        3D array of mass density
-    box_size : float
-        Physical size of the simulation box
-    G : float
-        Gravitational constant (default 1)
-
-    Returns
-    -------
-    phi : ndarray
-        3D array of potential
+    Solve ∇²φ = 4πG ρ  on a cubic grid with periodic BCs.
+    Setting soft_len>0 multiplies the k-space Green’s function by
+    exp(-k² soft_len² / 2) → Gaussian force softening.
     """
-    N = rho.shape[0]  # assume cube: NxNxN
-    kfreq = np.fft.fftfreq(N, d=box_size/N) * 2*np.pi
-    kx, ky, kz = np.meshgrid(kfreq, kfreq, kfreq, indexing='ij')
-    k2 = kx**2 + ky**2 + kz**2
-
+    N     = rho.shape[0]
     rho_k = np.fft.fftn(rho)
-    phi_k = np.zeros_like(rho_k, dtype=complex)
 
-    # Avoid division by zero
-    k2[0,0,0] = 1.0
+    k     = 2.0 * np.pi * np.fft.fftfreq(N, d=box_size / N)
+    kx, ky, kz = np.meshgrid(k, k, k, indexing="ij")
+    k2    = kx**2 + ky**2 + kz**2
+    k2[0, 0, 0] = np.inf
 
-    phi_k = -4*np.pi*G * rho_k / k2
+    soft_factor = np.exp(-G_k**2 * k2 / 2.0) if G_k > 0.0 else 1.0
+    phi_k = -4.0 * np.pi * G * soft_factor * rho_k / k2
+    phi_k[0, 0, 0] = 0.0                     # mean(φ)=0
 
-    # Restore k=0 mode to zero (mean potential arbitrary)
-    phi_k[0,0,0] = 0.0
+    return np.fft.ifftn(phi_k).real
 
-    phi = np.fft.ifftn(phi_k).real
-    #phi = phi - np.mean(phi)
-    return phi
 
 def poisson_solver_isolated(rho,G_k, N, box_size, G=1.0):
     dx = box_size / N

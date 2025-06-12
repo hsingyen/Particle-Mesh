@@ -9,7 +9,11 @@ from jeans_initial import create_particles_single, create_particles_double
 from poisson_solver import green
 
 # === Simulation parameters ===
+<<<<<<< HEAD
 N = 100                     # Grid size: N x N x N
+=======
+N = 128                    # Grid size: N x N x N
+>>>>>>> origin/main
 box_size = 1.0
 N_particles =  100         # 10000
 center = N // 2
