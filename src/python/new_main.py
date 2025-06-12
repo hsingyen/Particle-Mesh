@@ -6,20 +6,26 @@ from new_orbit_integrator import kdk_step, dkd_step,rk4_step
 from new_orbit_integrator import compute_phi
 from mpl_toolkits.mplot3d import Axes3D
 from jeans_initial import create_particles_single, create_particles_double
+from poisson_solver import green
 
 # === Simulation parameters ===
-N = 128                      # Grid size: N x N x N
+N = 16  # Grid size: N x N x N
 box_size = 1.0
-N_particles =  10000         # 10000
+N_particles =  100 #10000
 center = N // 2
 dt = 2e-4
-n_steps = 10                 # 200
-dp = 'ngp'                   # 'ngp', 'cic', or 'tsc'
-solver = 'periodic'          # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
-integrator = 'kdk'           # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
-softening = 0.0              #  box_size/N
-mode = 'stable'
-a = 0.005
+n_steps = 100  #200
+dp = 'ngp'  # 'ngp', 'cic', or 'tsc'
+solver = 'isolated' # 'isolated', 'periodic 
+integrator = 'dkd'         # 'kdk' or 'dkd' or 'rk4' 
+dx = box_size/N
+mode = 'expand'
+a = 0.05
+
+if solver == 'isolated':
+    G_k = green(N, box_size)
+else:
+    G_k =0
 
 # === useful function ===
 def potential_slice(phi, box_size, title):
@@ -47,15 +53,16 @@ def compute_total_momentum(velocities, masses):
     """Compute momentum (vector)"""
     return np.sum(masses[:, None] * velocities, axis=0)
 
-def compute_total_energy(positions, velocities, masses, N, box_size,dp,solver):
+def compute_total_energy(positions, velocities, masses, N, box_size,dp,solver, G_k):
     """Compute total energy (kinetic + potential) of the system."""
     KE = 0.5 * np.sum(masses * np.sum(velocities**2, axis=1))
 
-    phi,weights = compute_phi(positions, masses, N, box_size, dp, solver, soft_len = softening)
+    phi,weights = compute_phi(positions, masses, N, box_size, dp, solver, G_k)
     particle_values = []
     for weight in weights:
         phi_par = 0.0  # use scalar
         for idx, w in weight:
+            print(idx)
             phi_par += phi[idx] * w
         particle_values.append(phi_par)
     particle_values = np.array(particle_values)
@@ -69,19 +76,20 @@ def compute_total_energy(positions, velocities, masses, N, box_size,dp,solver):
 def main():
     np.random.seed(42)
     # single plummer(mode = 'stable, contract, expand)
-    positions, velocities, masses = create_particles_single(N_particles,box_size,a = a, M = 1.0, mode = mode ,G=1.0)
+    positions, velocities, masses = create_particles_single(N_particles,box_size,a = a, M = 1.0, mode = mode ,solver = solver,G=1.0)
     # two plummer(mode, addv= True,False, v_offset=)
-    positions, velocities, masses = create_particles_double(N_particles,box_size,a = a, M = 1.0, mode=mode,G=1.0 , add_initial_velocity=True, v_offset= 0.1)
+    #positions, velocities, masses = create_particles_double(N_particles,box_size,a = a, M = 1.0, mode=mode,solver = solver,G=1.0 , add_initial_velocity=True, v_offset= 0.1)
+    particle_slice_XY(positions, 'Initial setup')
 
     # initial total energy/momentum
     K_direct, P_direct, energy_direct = compute_energies_direct(positions, velocities, masses)
-    K_poi, P_poi, energy_poisson = compute_total_energy(positions,velocities,masses, N, box_size, dp , solver)
+    K_poi, P_poi, energy_poisson = compute_total_energy(positions,velocities,masses, N, box_size, dp , solver,G_k)
     momentum = compute_total_momentum(velocities,masses)
     Q_J_dir = 2 * K_direct / abs(P_direct)
     Q_J_poi = 2*K_poi/(abs(P_poi))
     print(f"Initial Energy(direct) = {energy_direct:.4f}, Qj = {Q_J_dir:.4f}")
     print(f"Initial Energy(poisson) = {energy_poisson:.4f},Qj = {Q_J_poi:.4f}")
-    print(f"Initial momentum = {momentum:.4f}")
+    print("Initial momentum =", momentum)
 
     # initial setup figure
     particle_slice_XY(positions, 'Initial setup')
@@ -99,14 +107,14 @@ def main():
     # update
     for step in range(n_steps):
         if integrator == 'kdk':
-            positions, velocities, masses, phi = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver,soft_len=softening)
+            positions, velocities, masses, phi = kdk_step(positions, velocities, masses, dt, N, box_size, dp, solver,G_k)
         elif integrator == 'dkd':
-            positions, velocities,masses, phi = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver,soft_len=softening)
+            positions, velocities,masses, phi = dkd_step(positions, velocities, masses, dt, N, box_size, dp, solver,G_k)
         elif integrator == 'rk4':
-            positions, velocities,masses, phi = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver,soft_len=softening)
+            positions, velocities,masses, phi = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver,G_k)
 
         # compute energy/momentum each step
-        KE, PE = compute_total_energy(positions, velocities, masses, N, box_size,dp,solver)
+        KE, PE, total_energy = compute_total_energy(positions, velocities, masses, N, box_size,dp,solver,G_k)
         energies.append([KE, PE])
         current_momentum = compute_total_momentum(velocities, masses)
         delta_P = current_momentum - momentum
@@ -114,9 +122,13 @@ def main():
         momentum_errors_xyz.append(np.abs(delta_P))
 
         # Save frames every 5 steps
-        if step % 5 == 0:
+        if step % 1 == 0:
             frames.append(phi[:,:,center].T.copy())
             particle_frames.append(positions.copy())
+    
+    PP_anim(frames, particle_frames, box_size, dp, solver)
+    energy(energies)
+    momentum_plot(momentum_errors_xyz)
         
 # === figures ===
 def PP_anim(frames, particle_frames, box_size,dp,solver):
@@ -171,7 +183,7 @@ def energy(energies):
     plt.grid()
     plt.show()
 
-def momentum(momentum_error_xyz):
+def momentum_plot(momentum_errors_xyz):
     momentum_errors_xyz = np.array(momentum_errors_xyz)  # shape: (n_steps, 3)
 
     plt.figure()
@@ -187,6 +199,3 @@ def momentum(momentum_error_xyz):
 
 if __name__ == "__main__":
     main()
-    PP_anim()
-    energy()
-    momentum()

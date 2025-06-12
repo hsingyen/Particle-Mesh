@@ -1,16 +1,14 @@
 import numpy as np
 
-# add boundary parameter
-# for isolated boudary, determine the particle still in or out of the box
 def deposit_ngp(positions, masses, N, box_size, boundary):
     rho = np.zeros((N, N, N))
     dx = box_size / N
     weights_list = []  # NEW: list of weights per particle
 
     for pos, m in zip(positions, masses):
-        ix = int(np.round(pos[0] / dx))
-        iy = int(np.round(pos[1] / dx))
-        iz = int(np.round(pos[2] / dx))
+        ix = int(np.floor(pos[0] / dx))
+        iy = int(np.floor(pos[1] / dx))
+        iz = int(np.floor(pos[2] / dx))
 
         if boundary == 'periodic':
             ix %= N
@@ -85,65 +83,54 @@ def deposit_cic(positions, masses, N, box_size, boundary):
     return rho, weights_list
 
 def deposit_tsc(positions, masses, N, box_size, boundary):
-    """
-    Triangular Shaped Cloud (TSC) deposition:
-      positions: shape (M,3) array of particle coordinates
-      masses:     shape (M,)   array of particle masses
-      N:          grid size per dimension
-      box_size:   physical size of the box
-      boundary:   'periodic' or 'isolated'
-    Returns
-      rho:        (N,N,N) density grid
-      weights_list: list of per-particle lists [((i,j,k), weight), ...]
-    """
-    rho = np.zeros((N, N, N), dtype=float)
+    rho = np.zeros((N, N, N))
     dx = box_size / N
-    weights_list = []
+    weights_list = []  # NEW: list of weights per particle
 
-    def tsc_w(r):
-        """TSC weight for distance r (can be negative)."""
-        ar = abs(r)
-        if ar < 0.5:
-            return 0.75 - ar**2
-        elif ar < 1.5:
-            return 0.5 * (1.5 - ar)**2
-        else:
-            return 0.0
+    def tsc_weights(d):
+        w_m1 = 0.5 * (1.5 - d)**2
+        w_0  = 0.75 - (d - 1.0)**2
+        w_p1 = 0.5 * (d - 0.5)**2
+        return np.array([w_m1, w_0, w_p1])
 
     for pos, m in zip(positions, masses):
-        # 1) 週期性映射
-        if boundary == 'periodic':
-            pos = np.mod(pos, box_size)
+        xg = pos[0] / dx
+        yg = pos[1] / dx
+        zg = pos[2] / dx
 
-        # 2) 轉換到格點座標
-        xg, yg, zg = pos / dx
-        ix, iy, iz = int(np.floor(xg+0.5)), int(np.floor(yg+0.5)), int(np.floor(zg+0.5))
+        ix = int(np.floor(xg)) 
+        iy = int(np.floor(yg)) 
+        iz = int(np.floor(zg)) 
 
-        particle_weights = []
-        # 3) 對 27 個相鄰格點計算 TSC 權重
-        for dx_idx in (-1, 0, 1):
-            for dy_idx in (-1, 0, 1):
-                for dz_idx in (-1, 0, 1):
+        dx1 = xg - ix
+        dy1 = yg - iy
+        dz1 = zg - iz
+
+        wx = tsc_weights(dx1)
+        wy = tsc_weights(dy1)
+        wz = tsc_weights(dz1)
+
+        particle_weights = []  # NEW
+
+        for dx_idx in range(-1, 2):
+            for dy_idx in range(-1, 2):
+                for dz_idx in range(-1, 2):
                     i = ix + dx_idx
                     j = iy + dy_idx
                     k = iz + dz_idx
+                    weight = wx[dx_idx+1] * wy[dy_idx+1] * wz[dz_idx+1]
 
-                    # 真實距離 r_x, r_y, r_z
-                    wx = tsc_w(xg - (ix + dx_idx))
-                    wy = tsc_w(yg - (iy + dy_idx))
-                    wz = tsc_w(zg - (iz + dz_idx))
-                    w = wx * wy * wz
-
-                    # 邊界處理
                     if boundary == 'periodic':
-                        i %= N; j %= N; k %= N
-                    elif not (0 <= i < N and 0 <= j < N and 0 <= k < N):
-                        continue
+                        i %= N
+                        j %= N
+                        k %= N
+                        rho[i, j, k] += m * weight / dx**3
+                        particle_weights.append(((i, j, k), weight))
+                    elif boundary == 'isolated':
+                        if 0 <= i < N and 0 <= j < N and 0 <= k < N:
+                            rho[i, j, k] += m * weight / dx**3
+                            particle_weights.append(((i, j, k), weight))
 
-                    # 累加到 rho
-                    rho[i, j, k] += m * w / dx**3
-                    particle_weights.append(((i, j, k), w))
-
-        weights_list.append(particle_weights)
+        weights_list.append(particle_weights)  # NEW
 
     return rho, weights_list
