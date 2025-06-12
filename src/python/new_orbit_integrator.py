@@ -103,7 +103,7 @@ def compute_acceleration(positions, masses, N, box_size, dp, solver,G_k):
     return acc_particles, phi
 
   
-  def nbody_compute_acceleration(positions, masses, N, box_size):
+def nbody_compute_acceleration(positions, masses, N, box_size):
     particle_values = []
     N_particles =len(masses)
     for i in range(N_particles):

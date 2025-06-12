@@ -121,9 +121,17 @@ AccelResult nbody_compute_acceleration(
                 d[dind] = positions[i][dind] - positions[j][dind];
             double r2 = d[0]*d[0] + d[1]*d[1] + d[2]*d[2] + soft;
             double inv_r3 = 1.0 / std::pow(r2, 1.5);
-            #pragma omp atomic acc[i][0] -= masses[j] * d[0] * inv_r3;
-            #pragma omp atomic acc[i][1] -= masses[j] * d[1] * inv_r3;
-            #pragma omp atomic acc[i][2] -= masses[j] * d[2] * inv_r3;
+
+            double fx = masses[j] * d[0] * inv_r3;
+            double fy = masses[j] * d[1] * inv_r3;
+            double fz = masses[j] * d[2] * inv_r3;
+
+            #pragma omp atomic
+            acc[i][0] -= fx;
+            #pragma omp atomic
+            acc[i][1] -= fy;
+            #pragma omp atomic
+            acc[i][2] -= fz;
         }
     }
 
