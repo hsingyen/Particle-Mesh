@@ -1,355 +1,164 @@
-#include <pybind11/pybind11.h>
-#include <pybind11/numpy.h>
-#include <iostream>
+#include "mass_deposition.hpp"
+#include <mpi.h>
 #include <omp.h>
+#include <cmath>
 
-namespace py = pybind11;
-std::pair< py::array_t<double>, py::list > deposit_ngp(
-    py::array_t<double, py::array::c_style> positions,
-    py::array_t<double, py::array::c_style> masses,
+GridDepositResult deposit_cic(
+    const std::vector<std::array<double,3>>& positions,
+    const std::vector<double>& masses,
     int N,
     double box_size,
-    const std::string &boundary)
+    const std::string& boundary)
 {
-    auto buf_pos = positions.request();
-    if (buf_pos.ndim != 2 || buf_pos.shape[1] != 3) {
-        throw std::runtime_error("positions must be shape=(N,3) float64 C-contiguous ndarray");
-    }
-    auto buf_mass = masses.request();
-    if (buf_mass.ndim != 1 || buf_mass.shape[0] != buf_pos.shape[0]) {
-        throw std::runtime_error("masses must be shape=(N,) float64 C-contiguous ndarray");
-    }
+    double dx = box_size / static_cast<double>(N);
+    std::vector<double> rho(N*N*N, 0.0);
+    std::vector<WeightList> weights_list(positions.size());
 
-    double *pos_ptr  = static_cast<double*>(buf_pos.ptr);
-    double *mass_ptr = static_cast<double*>(buf_mass.ptr);
-    ssize_t M = buf_pos.shape[0];      
-    ssize_t cols = buf_pos.shape[1];   
+    #pragma omp parallel for schedule(static)
+    for (size_t p = 0; p < positions.size(); ++p) {
+        const auto& pos = positions[p];
+        double m = masses[p];
+        double xg = pos[0] / dx;
+        double yg = pos[1] / dx;
+        double zg = pos[2] / dx;
 
-    py::array_t<double> rho({N, N, N});
-    auto buf_rho = rho.request();
-    double *rho_ptr = static_cast<double*>(buf_rho.ptr);
-    ssize_t total_rho = N * N * N;
-    for (ssize_t i = 0; i < total_rho; ++i) {
-        rho_ptr[i] = 0.0;
-    }
+        int ix = static_cast<int>(std::floor(xg));
+        int iy = static_cast<int>(std::floor(yg));
+        int iz = static_cast<int>(std::floor(zg));
 
-    double dx     = box_size / static_cast<double>(N);
-    double inv_vol = 1.0 / (dx * dx * dx);
-    int NN = N * N;
-    // pre-allocate weight index storage
-    std::vector<std::array<int,3>> weight_idx(M);
-    
+        double dx1 = xg - ix;
+        double dy1 = yg - iy;
+        double dz1 = zg - iz;
 
-    // parallel loop over particles
-    #pragma omp parallel for
-    for (ssize_t i = 0; i < M; ++i) {
-        double x = pos_ptr[i * cols + 0] / dx;
-        double y = pos_ptr[i * cols + 1] / dx;
-        double z = pos_ptr[i * cols + 2] / dx;
+        double w[8] = {
+            (1-dx1)*(1-dy1)*(1-dz1), dx1*(1-dy1)*(1-dz1),
+            (1-dx1)*dy1*(1-dz1), (1-dx1)*(1-dy1)*dz1,
+            dx1*dy1*(1-dz1), dx1*(1-dy1)*dz1,
+            (1-dx1)*dy1*dz1, dx1*dy1*dz1
+        };
 
-        int ix = static_cast<int>(std::round(x));
-        int iy = static_cast<int>(std::round(y));
-        int iz = static_cast<int>(std::round(z));
+        struct IndexTriple neigh[8] = {{ix,iy,iz},{ix+1,iy,iz},{ix,iy+1,iz},{ix,iy,iz+1},
+                                       {ix+1,iy+1,iz},{ix+1,iy,iz+1},{ix,iy+1,iz+1},{ix+1,iy+1,iz+1}};
 
-        if (boundary == "periodic") {
-            ix %= N; if (ix < 0) ix += N;
-            iy %= N; if (iy < 0) iy += N;
-            iz %= N; if (iz < 0) iz += N;
-            #pragma omp atomic
-            rho_ptr[ static_cast<ssize_t>(ix)*NN + static_cast<ssize_t>(iy)*N + iz ] += mass_ptr[i] * inv_vol;
-            weight_idx[i] = {ix, iy, iz};
+        WeightList local;
+        local.reserve(8);
 
-        }
-        else if (boundary == "isolated") {
-            if (0 <= ix && ix < N && 0 <= iy && iy < N && 0 <= iz && iz < N) {
+        for (int k = 0; k < 8; ++k) {
+            int i = neigh[k].x;
+            int j = neigh[k].y;
+            int l = neigh[k].z;
+            double weight = w[k];
+
+            if (boundary == "periodic") {
+                i = (i % N + N) % N;
+                j = (j % N + N) % N;
+                l = (l % N + N) % N;
+            }
+            if (boundary == "periodic" ||
+                (boundary == "isolated" && i>=0 && i<N && j>=0 && j<N && l>=0 && l<N)) {
+                int idx = i * N * N + j * N + l;
+                double delta = m * weight / (dx*dx*dx);
                 #pragma omp atomic
-                rho_ptr[ static_cast<ssize_t>(ix)*NN + static_cast<ssize_t>(iy)*N + iz ] += mass_ptr[i] * inv_vol;
-                weight_idx[i] = {ix, iy, iz};
-
+                rho[idx] += delta;
+                local.emplace_back(IndexTriple{i,j,l}, weight);
             }
         }
-        else {
-            throw std::runtime_error("boundary must be 'periodic' or 'isolated'");
-        }
-
-        // store for ordered weight output
+        weights_list[p] = std::move(local);
     }
-
-    // build Python weight list in original order
-    py::list weights_list;
-    for (ssize_t i = 0; i < M; ++i) {
-        auto &idx3_arr = weight_idx[i];
-        py::tuple idx3  = py::make_tuple(idx3_arr[0], idx3_arr[1], idx3_arr[2]);
-        py::tuple entry = py::make_tuple(idx3, 1);
-        py::list this_weights;
-        this_weights.append(entry);
-        weights_list.append(this_weights);
-    }
-
-    return std::make_pair(rho, weights_list);
+    return GridDepositResult{std::move(rho), std::move(weights_list)};
 }
 
-// ---------------------- deposit_cic ----------------------
-std::pair< py::array_t<double>, py::list > deposit_cic(
-    py::array_t<double, py::array::c_style> positions,
-    py::array_t<double, py::array::c_style> masses,
+GridDepositResult deposit_ngp(
+    const std::vector<std::array<double,3>>& positions,
+    const std::vector<double>& masses,
     int N,
     double box_size,
-    const std::string &boundary)
+    const std::string& boundary)
 {
-    auto buf_pos = positions.request();
-    if (buf_pos.ndim != 2 || buf_pos.shape[1] != 3) {
-        throw std::runtime_error("positions must be shape=(N,3) float64 C-contiguous ndarray");
-    }
-    auto buf_mass = masses.request();
-    if (buf_mass.ndim != 1 || buf_mass.shape[0] != buf_pos.shape[0]) {
-        throw std::runtime_error("masses must be shape=(N,) float64 C-contiguous ndarray");
-    }
+    double dx = box_size / static_cast<double>(N);
+    double inv_vol = 1.0/(dx*dx*dx);
+    std::vector<double> rho(N*N*N, 0.0);
+    std::vector<WeightList> weights_list(positions.size());
 
-    double *pos_ptr  = static_cast<double*>(buf_pos.ptr);
-    double *mass_ptr = static_cast<double*>(buf_mass.ptr);
-    ssize_t M = buf_pos.shape[0];
-    ssize_t cols = buf_pos.shape[1];
-
-    py::array_t<double> rho({ (size_t)N, (size_t)N, (size_t)N });
-    auto buf_rho = rho.request();
-    double *rho_ptr = static_cast<double*>(buf_rho.ptr);
-    ssize_t total_rho = (ssize_t)N * N * N;
-    for (ssize_t i = 0; i < total_rho; ++i) {
-        rho_ptr[i] = 0.0;
-    }
-
-    double dx      = box_size / static_cast<double>(N);
-    double inv_vol = 1.0 / (dx * dx * dx);
-    int NN = N * N;
-
-    std::vector<std::vector<std::pair<std::array<int,3>, double>>> tmp(M);
-    for (auto &v : tmp) {
-        v.reserve(8);
-    }
-
-    #pragma omp parallel for 
-    for (ssize_t i = 0; i < M; ++i) {
-        double xp = pos_ptr[i * cols + 0] / dx;
-        double yp = pos_ptr[i * cols + 1] / dx;
-        double zp = pos_ptr[i * cols + 2] / dx;
-
-        int i0 = static_cast<int>(std::floor(xp));
-        int j0 = static_cast<int>(std::floor(yp));
-        int k0 = static_cast<int>(std::floor(zp));
-
-        double fx = xp - i0;
-        double fy = yp - j0;
-        double fz = zp - k0;
-
-        double wx[2] = { 1.0 - fx, fx };
-        double wy[2] = { 1.0 - fy, fy };
-        double wz[2] = { 1.0 - fz, fz };
-
-        for (int dx_ = 0; dx_ <= 1; ++dx_) {
-            int ix = i0 + dx_;
-            for (int dy_ = 0; dy_ <= 1; ++dy_) {
-                int iy = j0 + dy_;
-                for (int dz_ = 0; dz_ <= 1; ++dz_) {
-                    int iz = k0 + dz_;
-                    double w = wx[dx_] * wy[dy_] * wz[dz_];
-
-                    if (boundary == "periodic") {
-                        ix %= N; if (ix < 0) ix += N;
-                        iy %= N; if (iy < 0) iy += N;
-                        iz %= N; if (iz < 0) iz += N;
-                        #pragma omp atomic
-                        rho_ptr[ static_cast<ssize_t>(ix)*NN + static_cast<ssize_t>(iy)*N + iz ]
-                            += mass_ptr[i] * inv_vol * w;
-                        tmp[i].push_back({{ix,iy,iz}, w}); 
-
-                    }
-                    else if (boundary == "isolated") {
-                        if (0 <= ix && ix < N && 0 <= iy && iy < N && 0 <= iz && iz < N) {
-                            #pragma omp atomic
-                            rho_ptr[ static_cast<ssize_t>(ix)*NN + static_cast<ssize_t>(iy)*N + iz ]
-                                += mass_ptr[i] * inv_vol * w;
-                            tmp[i].push_back({{ix,iy,iz}, w}); 
-
-                        }
-                    }
-                    else {
-                        throw std::runtime_error("boundary must be 'periodic' or 'isolated'");
-                    }
-                    
-                }
-            }
+    #pragma omp parallel for schedule(static)
+    for (size_t p = 0; p < positions.size(); ++p) {
+        const auto& pos = positions[p];
+        double m = masses[p];
+        int ix = static_cast<int>(std::round(pos[0] / dx));
+        int iy = static_cast<int>(std::round(pos[1] / dx));
+        int iz = static_cast<int>(std::round(pos[2] / dx));
+        if (boundary == "periodic") {
+            ix = (ix % N + N) % N;
+            iy = (iy % N + N) % N;
+            iz = (iz % N + N) % N;
         }
-    }
-    py::list weights_list;
-    for (ssize_t i = 0; i < M; ++i) {
-        py::list this_weights;
-        for (auto &p : tmp[i]) {
-            auto &idx3 = p.first;
-            double w  = p.second;
-            py::tuple t = py::make_tuple(py::make_tuple(idx3[0], idx3[1], idx3[2]), w);
-            this_weights.append(t);
+        bool in_bounds = (ix>=0 && ix<N && iy>=0 && iy<N && iz>=0 && iz<N);
+        WeightList local;
+        local.reserve(1);
+        if (boundary == "periodic" || (boundary == "isolated" && in_bounds)) {
+            int idx = ix * N * N + iy * N + iz;
+            #pragma omp atomic
+            rho[idx] += m * inv_vol;
+            local.emplace_back(IndexTriple{ix,iy,iz}, 1.0);
         }
-        weights_list.append(this_weights);
+        weights_list[p] = std::move(local);
     }
-
-
-    return std::make_pair(rho, weights_list);
+    return GridDepositResult{std::move(rho), std::move(weights_list)};
 }
 
-// ---------------------- deposit_tsc ----------------------
-std::pair< py::array_t<double>, py::list > deposit_tsc(
-    py::array_t<double, py::array::c_style> positions,
-    py::array_t<double, py::array::c_style> masses,
+GridDepositResult deposit_tsc(
+    const std::vector<std::array<double,3>>& positions,
+    const std::vector<double>& masses,
     int N,
     double box_size,
-    const std::string &boundary)
+    const std::string& boundary)
 {
-    auto buf_pos = positions.request();
-    if (buf_pos.ndim != 2 || buf_pos.shape[1] != 3) {
-        throw std::runtime_error("positions must be shape=(N,3) float64 C-contiguous ndarray");
-    }
-    auto buf_mass = masses.request();
-    if (buf_mass.ndim != 1 || buf_mass.shape[0] != buf_pos.shape[0]) {
-        throw std::runtime_error("masses must be shape=(N,) float64 C-contiguous ndarray");
-    }
+    double dx = box_size / static_cast<double>(N);
+    double inv_vol = 1.0/(dx*dx*dx);
+    auto tsc_w = [&](double r) {
+        double ar = std::abs(r);
+        if (ar < 0.5)       return 0.75 - ar*ar;
+        else if (ar < 1.5)  return 0.5*(1.5-ar)*(1.5-ar);
+        else                return 0.0;
+    };
+    std::vector<double> rho(N*N*N, 0.0);
+    std::vector<WeightList> weights_list(positions.size());
 
-    double *pos_ptr  = static_cast<double*>(buf_pos.ptr);
-    double *mass_ptr = static_cast<double*>(buf_mass.ptr);
-    ssize_t M = buf_pos.shape[0];
-    ssize_t cols = buf_pos.shape[1];
-
-    py::array_t<double> rho({ (size_t)N, (size_t)N, (size_t)N });
-    auto buf_rho = rho.request();
-    double *rho_ptr = static_cast<double*>(buf_rho.ptr);
-    ssize_t total_rho = (ssize_t)N * N * N;
-    for (ssize_t i = 0; i < total_rho; ++i) {
-        rho_ptr[i] = 0.0;
-    }
-
-    double dx      = box_size / static_cast<double>(N);
-    double inv_vol = 1.0 / (dx * dx * dx);
-    int NN = N * N;
-
-    std::vector<std::vector<std::pair<std::array<int,3>, double>>> tmp(M);
-    for (auto &v : tmp) {
-        v.reserve(8);
-    }
-
-    #pragma omp parallel for
-    for (ssize_t i = 0; i < M; ++i) {
-        double xp = pos_ptr[i * cols + 0] / dx;
-        double yp = pos_ptr[i * cols + 1] / dx;
-        double zp = pos_ptr[i * cols + 2] / dx;
-
-        int i0 = static_cast<int>(std::floor(xp+0.5));
-        int j0 = static_cast<int>(std::floor(yp+0.5));
-        int k0 = static_cast<int>(std::floor(zp+0.5));
-
-        // For TSC kernel, we'll loop over i0-1, i0, i0+1 etc.
-        for (int di = -1; di <= 1; ++di) {
-            int ix = i0 + di;
-            double rx = std::abs(xp - ix);
-            double wx;
-            if (rx < 0.5) {
-                wx = 0.75 - rx*rx;
-            }
-            else if (rx < 1.5) {
-                wx = 0.5 * (1.5 - rx) * (1.5 - rx);
-            }
-            else {
-                wx = 0.0;
-            }
-            if (wx == 0.0) continue;
-
-            for (int dj = -1; dj <= 1; ++dj) {
-                int iy = j0 + dj;
-                double ry = std::abs(yp - iy);
-                double wy;
-                if (ry < 0.5) {
-                    wy = 0.75 - ry*ry;
-                }
-                else if (ry < 1.5) {
-                    wy = 0.5 * (1.5 - ry) * (1.5 - ry);
-                }
-                else {
-                    wy = 0.0;
-                }
-                if (wy == 0.0) continue;
-
-                for (int dk = -1; dk <= 1; ++dk) {
-                    int iz = k0 + dk;
-                    double rz = std::abs(zp - iz);
-                    double wz;
-                    if (rz < 0.5) {
-                        wz = 0.75 - rz*rz;
-                    }
-                    else if (rz < 1.5) {
-                        wz = 0.5 * (1.5 - rz) * (1.5 - rz);
-                    }
-                    else {
-                        wz = 0.0;
-                    }
-                    if (wz == 0.0) continue;
-
-                    double w = wx * wy * wz;
-
-                    if (boundary == "periodic") {
-                        ix %= N; if (ix< 0) ix += N;
-                        iy %= N; if (iy < 0) iy += N;
-                        iz %= N; if (iz < 0) iz += N;
-                        #pragma omp atomic
-                        rho_ptr[ static_cast<ssize_t>(ix)*NN + static_cast<ssize_t>(iy)*N + iz ]
-                            += mass_ptr[i] * inv_vol * w;
-                        tmp[i].push_back({{ix,iy,iz}, w}); 
-
-                    }
-                    else if (boundary == "isolated") {
-                        if (0 <= ix && ix < N && 0 <= iy && iy < N && 0 <= iz && iz < N) {
-                            #pragma omp atomic
-                            rho_ptr[ static_cast<ssize_t>(ix)*NN + static_cast<ssize_t>(iy)*N + iz ]
-                                += mass_ptr[i] * inv_vol * w;
-                            tmp[i].push_back({{ix,iy,iz}, w}); 
-
-                        }
-                    }
-                    else {
-                        throw std::runtime_error("boundary must be 'periodic' or 'isolated'");
-                    }
-
-
-                }
+    #pragma omp parallel for schedule(static)
+    for (size_t p = 0; p < positions.size(); ++p) {
+        auto pos = positions[p];
+        double m = masses[p];
+        if (boundary == "periodic") {
+            for (int d=0; d<3; ++d) {
+                pos[d] = fmod(pos[d], box_size);
+                if (pos[d]<0) pos[d] += box_size;
             }
         }
-
-    }
-    py::list weights_list;
-    for (ssize_t i = 0; i < M; ++i) {
-        py::list this_weights;
-        for (auto &p : tmp[i]) {
-            auto &idx3 = p.first;
-            double w  = p.second;
-            py::tuple t = py::make_tuple(py::make_tuple(idx3[0], idx3[1], idx3[2]), w);
-            this_weights.append(t);
+        double xg = pos[0]/dx, yg = pos[1]/dx, zg = pos[2]/dx;
+        int ix = static_cast<int>(std::floor(xg+0.5));
+        int iy = static_cast<int>(std::floor(yg+0.5));
+        int iz = static_cast<int>(std::floor(zg+0.5));
+        WeightList local;
+        local.reserve(27);
+        for (int dx_idx=-1; dx_idx<=1; ++dx_idx)
+        for (int dy_idx=-1; dy_idx<=1; ++dy_idx)
+        for (int dz_idx=-1; dz_idx<=1; ++dz_idx) {
+            int i = ix+dx_idx, j = iy+dy_idx, k = iz+dz_idx;
+            double w = tsc_w(xg - (ix+dx_idx)) * tsc_w(yg - (iy+dy_idx)) * tsc_w(zg - (iz+dz_idx));
+            if (w == 0.0) continue;
+            if (boundary == "periodic") {
+                i = (i % N + N) % N;
+                j = (j % N + N) % N;
+                k = (k % N + N) % N;
+            } else if (!(i>=0&&i<N && j>=0&&j<N && k>=0&&k<N)) {
+                continue;
+            }
+            int idx = i * N * N + j * N + k;
+            #pragma omp atomic
+            rho[idx] += m * w * inv_vol;
+            local.emplace_back(IndexTriple{i,j,k}, w);
         }
-        weights_list.append(this_weights);
+        weights_list[p] = std::move(local);
     }
-
-
-    return std::make_pair(rho, weights_list);
-}
-
-
-
-PYBIND11_MODULE(example_omp, m) {
-    m.doc() = "Example: Use OpenMP to parallel fill and return a NumPy matrix";
-    m.def("deposit_ngp",
-          &deposit_ngp,
-          "Return a deposit_ngp");
-    m.def("deposit_cic",
-          &deposit_cic,
-          "Return a deposit_cic");
-    m.def("deposit_tsc",
-          &deposit_tsc,
-          "Return a deposit_tsc");
+    return GridDepositResult{std::move(rho), std::move(weights_list)};
 }

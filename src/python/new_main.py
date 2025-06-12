@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from matplotlib.animation import PillowWriter
-#from new_mass_deposition import deposit_ngp, deposit_cic, deposit_tsc
 from new_orbit_integrator import kdk_step, dkd_step,rk4_step
 from new_orbit_integrator import compute_phi
 from mpl_toolkits.mplot3d import Axes3D
@@ -70,17 +69,6 @@ def compute_total_energy(positions, velocities, masses, N, box_size,dp,solver, G
     PE = 0.5*np.sum(masses*particle_values)
     return KE, PE, KE+PE
 
-def compute_energies_direct(x, v, m, G=1.0, softening=dx):
-    #can be removed
-    N = len(m)
-    KE = 0.5 * np.sum(m * np.sum(v**2, axis=1))
-    PE = 0.0
-    for i in range(N):
-        for j in range(i+1, N):
-            dx = x[i] - x[j]
-            r2 = np.dot(dx, dx) + softening**2
-            PE -= G * m[i] * m[j] / np.sqrt(r2)
-    return KE, PE, KE + PE
 
 
 
