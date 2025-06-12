@@ -62,7 +62,6 @@ def compute_total_energy(positions, velocities, masses, N, box_size,dp,solver, G
     for weight in weights:
         phi_par = 0.0  # use scalar
         for idx, w in weight:
-            print(idx)
             phi_par += phi[idx] * w
         particle_values.append(phi_par)
     particle_values = np.array(particle_values)
@@ -90,14 +89,13 @@ def main():
     # two plummer(mode, addv= True,False, v_offset=)
     #positions, velocities, masses = create_particles_double(N_particles,box_size,a = a, M = 1.0, mode=mode,solver = solver,G=1.0 , add_initial_velocity=True, v_offset= 0.1)
     particle_slice_XY(positions, 'Initial setup')
-
     # initial total energy/momentum
-    K_direct, P_direct, energy_direct = compute_energies_direct(positions, velocities, masses)
+    # K_direct, P_direct, energy_direct = compute_energies_direct(positions, velocities, masses)
     K_poi, P_poi, energy_poisson = compute_total_energy(positions,velocities,masses, N, box_size, dp , solver,G_k)
     momentum = compute_total_momentum(velocities,masses)
-    Q_J_dir = 2 * K_direct / abs(P_direct)
+    # Q_J_dir = 2 * K_direct / abs(P_direct)
     Q_J_poi = 2*K_poi/(abs(P_poi))
-    print(f"Initial Energy(direct) = {energy_direct:.4f}, Qj = {Q_J_dir:.4f}")
+    # print(f"Initial Energy(direct) = {energy_direct:.4f}, Qj = {Q_J_dir:.4f}")
     print(f"Initial Energy(poisson) = {energy_poisson:.4f},Qj = {Q_J_poi:.4f}")
     print("Initial momentum =", momentum)
 

@@ -46,12 +46,11 @@ def create_particles_single(N_particles, box_size, a, M, mode, solver,G=1.0):
     # --- Step 3: Assign equal mass to all particles
     masses = np.full(N_particles, M / N_particles)
 
-    if boundary == 'isoalated':
+    if boundary == 'isolated':
         mask = np.all((positions >= 0) & (positions < box_size), axis=1)
         positions = positions[mask]
         velocities = velocities[mask]
         masses = masses[mask]
-
     return positions, velocities, masses
 
 def create_particles_double(N_particles, box_size, a, M, mode, solver,G, add_initial_velocity , v_offset):
