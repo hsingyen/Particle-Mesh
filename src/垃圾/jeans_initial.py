@@ -25,6 +25,7 @@ def sample_plummer_radius(N, a, r_max=50.0):
             r.append(val)
     return np.array(r)
 
+
 def create_particles(N_particles, box_size, a, M, mode="stable",r_max=5.0,G=1.0):
     """
 

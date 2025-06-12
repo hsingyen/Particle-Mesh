@@ -1,6 +1,6 @@
 import numpy as np
 from itertools import product
-from poisson_solver import poisson_solver_periodic_safe, poisson_solver_periodic,poisson_solver_isolated
+from poisson_solver import poisson_solver_periodic_safe, poisson_solver_periodic,poisson_solver_isolated, poisson_solver_isolated_green
 from new_mass_deposition import deposit_cic,deposit_ngp,deposit_tsc
 #import example_omp
 

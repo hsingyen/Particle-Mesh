@@ -10,15 +10,16 @@ from mpl_toolkits.mplot3d import Axes3D
 from jeans_initial import create_particles
 import time
 
-N = 64  # Grid size: N x N x N
+# === Simulation parameters ===
+N = 128  # Grid size: N x N x N
 box_size = 1
 N_particles =  100 #10000
 center = N // 2
 dt = 2e-4
 n_steps = 500  #200
 dp = 'ngp'  # 'ngp', 'cic', or 'tsc'
-solver = 'periodic' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
-integrator = 'dkd'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
+solver = 'isolated' # 'isolated', 'periodic ,'periodic_safe'(softening = 0 equal to periodic)
+integrator = 'kdk'         # 'kdk' or 'dkd' or 'rk4' or 'hermite_individual'   or 'hermite_fixed'
 self_force = False         # True or False
 softening = box_size /N 
 a = 0.05
@@ -109,24 +110,8 @@ def main():
     #positions, velocities, masses = create_random_particles(N_particles, box_size)
     # test self-gravity collapse
     # positions, velocities, masses = create_random_center_particles(N_particles, box_size)
-    #jeans equation
-    positions, velocities, masses = create_particles(
-        N_particles, box_size,
-        0.05,10,
-        mode='contract',
-    )
-    speeds2 = np.sum(velocities**2, axis=1)   # v_i^2
-    K = 0.5 * np.sum(masses * speeds2)
 
-    # 勢能
-    W = 0.0
-    for i in range(N_particles):
-        for j in range(i+1, N_particles):
-            dx = positions[i] - positions[j]
-            r = np.linalg.norm(dx)
-            W -= 1.0 * masses[i] * masses[j] / r
-    print("potetial ",W,"Kenetic E ",K, "Ratio ", -W/2/K)
-
+    positions, velocities, masses = create_particles(N_particles, box_size, a = a , M =1.0, mode='expand',r_max = 5, G = 1.0)
 
     # Manually scale the velocities
 
@@ -150,7 +135,7 @@ def main():
     print(f"ΔTotal / E_direct = {(E_pm - E_direct)/abs(E_direct):.4e}")
     '''
 
-    # Initial Jeans Q_J calculation
+    #Initial Jeans Q_J calculation
     KE, PE = compute_total_energy(positions, velocities, masses, N, box_size, dp, solver)
     Q_J = 2 * KE / abs(PE)
     print("Poisson potetial ",PE,"Kenetic E ",KE, "Ratio ", -PE/2/KE)
@@ -168,7 +153,7 @@ def main():
     ax_init.set_ylabel("y")
     ax_init.set_title("Initial Particle Positions (XY Plane)")
     plt.tight_layout()
-    plt.show()
+    #plt.show()
     #print("Position range:", positions.min(), positions.max())
     #print("Velocity sample:", velocities[:3])
     #print("Total mass:", masses.sum())
