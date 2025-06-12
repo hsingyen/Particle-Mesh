@@ -1,5 +1,5 @@
 #include "orbit_integrator.hpp"
-#include <mpi.h>
+// #include <mpi.h>
 #include <omp.h>
 #include <cmath>
 #include <stdexcept>

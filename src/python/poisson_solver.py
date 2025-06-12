@@ -14,9 +14,8 @@ def poisson_solver_periodic(rho, box_size, G_k, G=1.0):
     k2    = kx**2 + ky**2 + kz**2
     k2[0, 0, 0] = np.inf
 
-    soft_factor = np.exp(-G_k**2 * k2 / 2.0) if G_k > 0.0 else 1.0
-    phi_k = -4.0 * np.pi * G * soft_factor * rho_k / k2
-    phi_k[0, 0, 0] = 0.0                     # mean(φ)=0
+    phi_k = -4.0 * np.pi * G  * rho_k / k2
+    phi_k[0, 0, 0] = 0.0                    
 
     return np.fft.ifftn(phi_k).real
 

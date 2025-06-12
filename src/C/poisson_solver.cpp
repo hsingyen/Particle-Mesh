@@ -1,191 +1,182 @@
+// poisson_solver.cpp
 #include "poisson_solver.hpp"
 #include <fftw3.h>
 #include <cmath>
+#include <omp.h>
 
-std::vector<double> poisson_solver_periodic(
-    const std::vector<double>& rho_flat,
-    int N,
-    double box_size,
-    double G)
-{
-    int n = N;
-    int n_complex = n * n * (n/2 + 1);
-    
-    // Allocate FFT arrays
-    double* rho   = fftw_alloc_real(n*n*n);
-    fftw_complex* rho_k = fftw_alloc_complex(n_complex);
-    fftw_complex* phi_k = fftw_alloc_complex(n_complex);
-    double* phi   = fftw_alloc_real(n*n*n);
-
-    // Copy density into FFT input
-    std::copy(rho_flat.begin(), rho_flat.end(), rho);
-
-    // Create FFTW plans
-    fftw_plan plan_r2c = fftw_plan_dft_r2c_3d(n, n, n, rho, rho_k, FFTW_ESTIMATE);
-    fftw_plan plan_c2r = fftw_plan_dft_c2r_3d(n, n, n, phi_k, phi, FFTW_ESTIMATE);
-
-    // Forward FFT
-    fftw_execute(plan_r2c);
-
-    // Compute k-grid factor
-    double dk = 2.0 * M_PI / box_size;
-    for (int i = 0; i < n; ++i) {
-        double kx = (i <= n/2 ? i : i-n) * dk;
-        for (int j = 0; j < n; ++j) {
-            double ky = (j <= n/2 ? j : j-n) * dk;
-            for (int k = 0; k <= n/2; ++k) {
-                double kz = k * dk;
-                int idx = (i*n + j)*(n/2+1) + k;
-                if (i==0 && j==0 && k==0) {
-                    phi_k[idx][0] = phi_k[idx][1] = 0.0;
-                } else {
-                    double k2 = kx*kx + ky*ky + kz*kz;
-                    double factor = -4.0 * M_PI * G / k2;
-                    phi_k[idx][0] = rho_k[idx][0] * factor;
-                    phi_k[idx][1] = rho_k[idx][1] * factor;
-                }
-            }
-        }
-    }
-
-    // Inverse FFT
-    fftw_execute(plan_c2r);
-
-    // Normalize and copy output
-    std::vector<double> phi_out(n*n*n);
-    double scale = 1.0 / (n*n*n);
-    for (int idx = 0; idx < n*n*n; ++idx) {
-        phi_out[idx] = phi[idx] * scale;
-    }
-
-    // Cleanup
-    fftw_destroy_plan(plan_r2c);
-    fftw_destroy_plan(plan_c2r);
-    fftw_free(rho);
-    fftw_free(rho_k);
-    fftw_free(phi_k);
-    fftw_free(phi);
-
-    return phi_out;
+// Helper to flatten 3D index
+inline int idx3(int i, int j, int k, int N) {
+    return (i * N + j) * N + k;
 }
 
-std::vector<double> poisson_solver_periodic_safe(
-    const std::vector<double>& rho_flat,
+std::vector<double> poisson_solver_periodic(
+    const std::vector<double>& rho,
     int N,
     double box_size,
-    double soft_len,
-    double G)
-{
-    int n = N;
-    int n_complex = n * n * (n/2 + 1);
-    double* rho   = fftw_alloc_real(n*n*n);
-    fftw_complex* rho_k = fftw_alloc_complex(n_complex);
-    fftw_complex* phi_k = fftw_alloc_complex(n_complex);
-    double* phi   = fftw_alloc_real(n*n*n);
+    double G
+) {
+    int size = N*N*N;
+    // 1) copy density into FFTW input
+    std::vector<double> in(rho);
+    std::vector<std::complex<double>> out(size);
 
-    std::copy(rho_flat.begin(), rho_flat.end(), rho);
-    fftw_plan plan_r2c = fftw_plan_dft_r2c_3d(n,n,n, rho, rho_k, FFTW_ESTIMATE);
-    fftw_plan plan_c2r = fftw_plan_dft_c2r_3d(n,n,n, phi_k, phi, FFTW_ESTIMATE);
+    // 2) forward FFT
+    fftw_plan plan_f = fftw_plan_dft_r2c_3d(
+        N, N, N,
+        in.data(),
+        reinterpret_cast<fftw_complex*>(out.data()),
+        FFTW_ESTIMATE
+    );
+    fftw_execute(plan_f);
+    fftw_destroy_plan(plan_f);
 
-    fftw_execute(plan_r2c);
-    double dk = 2.0 * M_PI / box_size;
-    for (int i = 0; i < n; ++i) {
-        double kx = (i <= n/2 ? i : i-n) * dk;
-        for (int j = 0; j < n; ++j) {
-            double ky = (j <= n/2 ? j : j-n) * dk;
-            for (int k = 0; k <= n/2; ++k) {
-                double kz = k * dk;
-                int idx = (i*n + j)*(n/2+1) + k;
-                if (i==0 && j==0 && k==0) {
-                    phi_k[idx][0] = phi_k[idx][1] = 0.0;
-                } else {
-                    double k2 = kx*kx + ky*ky + kz*kz;
-                    double soft = (soft_len>0 ? std::exp(-0.5*soft_len*soft_len*k2) : 1.0);
-                    double factor = -4.0 * M_PI * G * soft / k2;
-                    phi_k[idx][0] = rho_k[idx][0] * factor;
-                    phi_k[idx][1] = rho_k[idx][1] * factor;
-                }
-            }
+    // 3) build k^2 and divide
+    double factor = 2.0 * M_PI / (box_size / N);
+    // note: ffwt_r2c packs k-space as [0..N-1][0..N-1][0..N/2]
+    int nkz = N/2 + 1;
+#pragma omp parallel for collapse(3)
+    for(int i=0;i<N;i++){
+      for(int j=0;j<N;j++){
+        for(int k=0;k<nkz;k++){
+          int index = (i*N + j)*nkz + k;
+          double kx = factor * ((i<=N/2)? i : i-N);
+          double ky = factor * ((j<=N/2)? j : j-N);
+          double kz = factor * k;
+          double k2 = kx*kx + ky*ky + kz*kz;
+          if(k==0 && i==0 && j==0){
+            out[index] = 0.0;
+          } else {
+            out[index] *= (-4.0 * M_PI * G) / k2;
+          }
         }
+      }
     }
-    fftw_execute(plan_c2r);
-    std::vector<double> phi_out(n*n*n);
-    double scale = 1.0/(n*n*n);
-    for (int idx=0; idx<n*n*n; ++idx) phi_out[idx] = phi[idx]*scale;
 
-    fftw_destroy_plan(plan_r2c);
-    fftw_destroy_plan(plan_c2r);
-    fftw_free(rho);
-    fftw_free(rho_k);
-    fftw_free(phi_k);
-    fftw_free(phi);
-    return phi_out;
+    // 4) inverse FFT
+    std::vector<double> phi(size);
+    fftw_plan plan_b = fftw_plan_dft_c2r_3d(
+        N, N, N,
+        reinterpret_cast<fftw_complex*>(out.data()),
+        phi.data(),
+        FFTW_ESTIMATE
+    );
+    fftw_execute(plan_b);
+    fftw_destroy_plan(plan_b);
+
+    // 5) normalize (FFTW does unnormalized transforms)
+    double norm = 1.0/size;
+#pragma omp parallel for
+    for(int i=0;i<size;i++){
+      phi[i] *= norm;
+    }
+
+    return phi;
 }
 
 std::vector<double> poisson_solver_isolated(
-    const std::vector<double>& rho_flat,
+    const std::vector<double>& rho,
+    const std::vector<std::complex<double>>& G_k,
     int N,
     double box_size,
-    double soft_len,
-    double G)
-{
-    int n = N;
-    int n2 = 2*n;
-    int n2_complex = n2 * n2 * (n2/2 + 1);
-    double* rho_pad = fftw_alloc_real(n2*n2*n2);
-    fftw_complex* rho_k  = fftw_alloc_complex(n2_complex);
-    fftw_complex* phi_k  = fftw_alloc_complex(n2_complex);
-    double* phi_pad      = fftw_alloc_real(n2*n2*n2);
+    double G
+) {
+    int N2 = 2*N;
+    int size_pad = N2*N2*N2;
+    int nkz = N2/2 + 1;
 
-    int start = n/2 - 1;
-    std::fill(rho_pad, rho_pad + n2*n2*n2, 0.0);
-    for (int i=0; i<n; ++i)
-    for (int j=0; j<n; ++j)
-    for (int k=0; k<n; ++k) {
-        int dst = (i+start)*n2*n2 + (j+start)*n2 + (k+start);
-        rho_pad[dst] = rho_flat[i*n*n + j*n + k];
-    }
-
-    fftw_plan plan_r2c = fftw_plan_dft_r2c_3d(n2,n2,n2, rho_pad, rho_k, FFTW_ESTIMATE);
-    fftw_plan plan_c2r = fftw_plan_dft_c2r_3d(n2,n2,n2, phi_k, phi_pad, FFTW_ESTIMATE);
-
-    fftw_execute(plan_r2c);
-    double dk = 2.0 * M_PI / box_size;
-    for (int i=0; i<n2; ++i) {
-        double kx = (i <= n2/2 ? i : i-n2) * dk;
-        for (int j=0; j<n2; ++j) {
-            double ky = (j <= n2/2 ? j : j-n2) * dk;
-            for (int k=0; k<=n2/2; ++k) {
-                int idx = (i*n2 + j)*(n2/2+1) + k;
-                if (i==0 && j==0 && k==0) {
-                    phi_k[idx][0] = phi_k[idx][1] = 0.0;
-                } else {
-                    double kz = k * dk;
-                    double k2 = kx*kx + ky*ky + kz*kz;
-                    double soft = (soft_len>0 ? std::exp(-0.5*soft_len*soft_len*k2) : 1.0);
-                    double factor = -4.0*M_PI*G * soft / k2;
-                    phi_k[idx][0] = rho_k[idx][0] * factor;
-                    phi_k[idx][1] = rho_k[idx][1] * factor;
-                }
-            }
+    // 1) pad rho
+    std::vector<double> in(size_pad, 0.0);
+#pragma omp parallel for collapse(3)
+    for(int i=0;i<N;i++){
+      for(int j=0;j<N;j++){
+        for(int k=0;k<N;k++){
+          in[idx3(i,j,k,N2)] = rho[idx3(i,j,k,N)];
         }
+      }
     }
 
-    fftw_execute(plan_c2r);
-    std::vector<double> phi_out(n*n*n);
-    double scale = 1.0/(n2*n2*n2);
-    for (int i=0; i<n; ++i)
-    for (int j=0; j<n; ++j)
-    for (int k=0; k<n; ++k) {
-        int src = (i+start)*n2*n2 + (j+start)*n2 + (k+start);
-        phi_out[i*n*n + j*n + k] = phi_pad[src] * scale;
+    // 2) forward FFT
+    std::vector<std::complex<double>> rho_k(size_pad);
+    fftw_plan plan_f = fftw_plan_dft_r2c_3d(
+        N2, N2, N2,
+        in.data(),
+        reinterpret_cast<fftw_complex*>(rho_k.data()),
+        FFTW_ESTIMATE
+    );
+    fftw_execute(plan_f);
+    fftw_destroy_plan(plan_f);
+
+    // 3) multiply by Green’s function in k-space
+#pragma omp parallel for
+    for(int idx=0; idx < (int)rho_k.size(); idx++){
+      rho_k[idx] *= G_k[idx];
     }
 
-    fftw_destroy_plan(plan_r2c);
-    fftw_destroy_plan(plan_c2r);
-    fftw_free(rho_pad);
-    fftw_free(rho_k);
-    fftw_free(phi_k);
-    fftw_free(phi_pad);
-    return phi_out;
+    // 4) inverse FFT
+    std::vector<double> phi_pad(size_pad);
+    fftw_plan plan_b = fftw_plan_dft_c2r_3d(
+        N2, N2, N2,
+        reinterpret_cast<fftw_complex*>(rho_k.data()),
+        phi_pad.data(),
+        FFTW_ESTIMATE
+    );
+    fftw_execute(plan_b);
+    fftw_destroy_plan(plan_b);
+
+    // 5) normalize and extract
+    double norm = 1.0/(dx*dx)/size_pad;  // account for volume element and FFT scaling
+#pragma omp parallel for
+    for(int i=0;i<size_pad;i++){
+      phi_pad[i] *= norm * (4.0*M_PI*G);
+    }
+
+    std::vector<double> phi(N*N*N);
+#pragma omp parallel for collapse(3)
+    for(int i=0;i<N;i++){
+      for(int j=0;j<N;j++){
+        for(int k=0;k<N;k++){
+          phi[idx3(i,j,k,N)] = phi_pad[idx3(i,j,k,N2)];
+        }
+      }
+    }
+
+    return phi;
+}
+
+std::vector<std::complex<double>> compute_green_ft(
+    int N,
+    double box_size
+) {
+    int N2 = 2*N;
+    int size = N2*N2*N2;
+    std::vector<double> g(size);
+    double dx = box_size / N;
+
+    // 1) fill real-space Green’s function
+#pragma omp parallel for collapse(3)
+    for(int i=0; i < N2; i++){
+      for(int j=0; j < N2; j++){
+        for(int k=0; k < N2; k++){
+          int ii = std::min(i, N2 - i);
+          int jj = std::min(j, N2 - j);
+          int kk = std::min(k, N2 - k);
+          double r = std::sqrt(ii*ii + jj*jj + kk*kk)
+          if(r == 0) g[idx3(i,j,k,N2)] = 0.0;
+          else       g[idx3(i,j,k,N2)] = -1.0 / r;
+        }
+      }
+    }
+
+    // 2) FFT to get G_k
+    std::vector<std::complex<double>> G_k(size);
+    fftw_plan plan_f = fftw_plan_dft_r2c_3d(
+        N2, N2, N2,
+        g.data(),
+        reinterpret_cast<fftw_complex*>(G_k.data()),
+        FFTW_ESTIMATE
+    );
+    fftw_execute(plan_f);
+    fftw_destroy_plan(plan_f);
+
+    return G_k;
 }

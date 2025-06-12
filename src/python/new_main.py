@@ -15,12 +15,12 @@ N_particles =  100         # 10000
 center = N // 2
 dt = 2e-4
 n_steps = 100              # 200
-dp = 'ngp'                 # 'ngp', 'cic', or 'tsc'
+dp = 'cic'                 # 'ngp', 'cic', or 'tsc'
 solver = 'periodic'        # 'isolated', 'periodic 
 integrator = 'dkd'         # 'kdk' or 'dkd' or 'rk4' 
 dx = box_size/N
 mode = 'stable'
-a = 0.05
+a = 0.01
 
 if solver == 'isolated':
     G_k = green(N, box_size)
