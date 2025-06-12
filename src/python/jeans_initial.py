@@ -97,7 +97,7 @@ def create_particles_double(N_particles, box_size, a, M, mode, solver,G, add_ini
     velocities_all = np.vstack(velocities_all)
     masses = np.full(N_particles, M / N_particles)
 
-    if boundary == 'isoalated':
+    if boundary == 'isolated':
         mask = np.all((positions >= 0) & (positions < box_size), axis=1)
         positions = positions[mask]
         velocities = velocities[mask]

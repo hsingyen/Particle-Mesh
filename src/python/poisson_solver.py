@@ -23,7 +23,7 @@ def poisson_solver_periodic(rho, box_size, G=1.0):
     kx, ky, kz = np.meshgrid(kfreq, kfreq, kfreq, indexing='ij')
     k2 = kx**2 + ky**2 + kz**2
 
-    rho_k = np.fft.rfftn(rho)
+    rho_k = np.fft.fftn(rho)
     phi_k = np.zeros_like(rho_k, dtype=complex)
 
     # Avoid division by zero
@@ -34,7 +34,7 @@ def poisson_solver_periodic(rho, box_size, G=1.0):
     # Restore k=0 mode to zero (mean potential arbitrary)
     phi_k[0,0,0] = 0.0
 
-    phi = np.real(np.fft.irfftn(phi_k))
+    phi = np.fft.ifftn(phi_k).real
     #phi = phi - np.mean(phi)
     return phi
 
