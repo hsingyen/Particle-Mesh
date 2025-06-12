@@ -73,7 +73,7 @@ def compute_phi(positions, masses, N, box_size, dp, solver,G_k):
 
     # Step 2: Solve Poisson equation
     if solver == "periodic":
-        phi = poisson_solver_periodic(rho, box_size, G=1.0)
+        phi = poisson_solver_periodic(rho, box_size, G_k,G=1.0)
     elif solver == "isolated":
         phi = poisson_solver_isolated(rho, G_k,N, box_size, G=1.0)
 
