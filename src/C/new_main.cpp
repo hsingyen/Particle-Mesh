@@ -5,6 +5,8 @@
 #include <string>
 #include <tuple>
 #include <cmath>
+#include <chrono>
+#include <omp.h>
 
 int flatten_index(const IndexTriple& idx, int N) {
     return idx.x * N * N + idx.y * N + idx.z;
@@ -14,15 +16,16 @@ int main() {
     // === Simulation Parameters ===
     const int    N           = 128;
     const double box_size    = 1.0;
-    const int    N_particles = 100;
+    const int    N_particles = 5000;
     const double dt          = 2e-4;
     const int    n_steps     = 100;
     const std::string dp     = "ngp";
-    const std::string solver = "periodic";
-    const std::string integrator = "dkd";
+    const std::string solver = "isolated";
+    const std::string integrator = "kdk";
     const std::string mode   = "stable";
     const double a           = 0.005;
     const double G           = 1.0;
+    std::cout << "Using " << omp_get_max_threads() << " OpenMP threads\n";
 
     // === Initialization ===
     ParticleArray positions, velocities;
@@ -48,13 +51,20 @@ int main() {
         G_k = compute_green_ft(N, box_size);
     }
 
+    //time measurement
+    double total_integrator_time = 0.0;
     // === Time‐integration loop ===
     for (int step = 0; step < n_steps; ++step) {
+
+        auto t0 = std::chrono::high_resolution_clock::now();
         // 1) Advance one step
         StepResult step_result;
         if      (integrator == "kdk") step_result = kdk_step (positions, velocities, masses, dt, N, box_size, dp, solver, G_k);
         else if (integrator == "dkd") step_result = dkd_step (positions, velocities, masses, dt, N, box_size, dp, solver, G_k);
         else /*rk4*/                  step_result = rk4_step(positions, velocities, masses, dt, N, box_size, dp, solver, G_k, G);
+        auto t1 = std::chrono::high_resolution_clock::now();
+        total_integrator_time += std::chrono::duration<double>(t1 - t0).count();
+
 
         // 2) Unpack the survivors
         positions = std::move(step_result.positions);
@@ -122,6 +132,12 @@ int main() {
             pot_file << "\n";
         }
     }
+
+    std::cout << "dp=" << dp
+            << ", threads=" << omp_get_max_threads()
+            << ", total_time=" << total_integrator_time
+            << ", avg_per_step=" << (total_integrator_time / n_steps)
+            << "\n";
 
     log_file.close();
     pos_file.close();
