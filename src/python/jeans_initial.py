@@ -15,7 +15,8 @@ def phi_plummer(r, a,G=1.0, M=1.0):
 def plummer_velocity_dispersion(r,a,M=1.0,G=1.0):
     return np.sqrt(G * M / np.sqrt(r**2 + a**2)/6.0)
 
-def create_particles_single(N_particles, box_size, a, M, mode="stable", G=1.0):
+def create_particles_single(N_particles, box_size, a, M, mode, solver,G=1.0):
+    boundary = solver
     # --- Step 1: Generate positions using Plummer distribution
     box_center = np.array([box_size / 2] * 3)
     u = np.random.rand(N_particles)
@@ -45,12 +46,19 @@ def create_particles_single(N_particles, box_size, a, M, mode="stable", G=1.0):
     # --- Step 3: Assign equal mass to all particles
     masses = np.full(N_particles, M / N_particles)
 
+    if boundary == 'isoalated':
+        mask = np.all((positions >= 0) & (positions < box_size), axis=1)
+        positions = positions[mask]
+        velocities = velocities[mask]
+        masses = masses[mask]
+
     return positions, velocities, masses
 
-def create_particles_double(N_particles, box_size, a, M, mode="stable", G=1.0, add_initial_velocity = False, v_offset=0.1):
+def create_particles_double(N_particles, box_size, a, M, mode, solver,G, add_initial_velocity , v_offset):
     N_each = N_particles // 2
     positions_all = []
     velocities_all = []
+    boundary = solver
 
     for center_shift, bulk_v in [(-0.1, +v_offset), (+0.1, -v_offset)]:
         box_center = np.array([box_size / 2 + center_shift, box_size/2, box_size/2])
@@ -89,6 +97,12 @@ def create_particles_double(N_particles, box_size, a, M, mode="stable", G=1.0, a
     positions_all = np.vstack(positions_all)
     velocities_all = np.vstack(velocities_all)
     masses = np.full(N_particles, M / N_particles)
+
+    if boundary == 'isoalated':
+        mask = np.all((positions >= 0) & (positions < box_size), axis=1)
+        positions = positions[mask]
+        velocities = velocities[mask]
+        masses = masses[mask]
 
     return positions_all, velocities_all, masses
 
