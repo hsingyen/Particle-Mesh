@@ -162,3 +162,4 @@ GridDepositResult deposit_tsc(
     }
     return GridDepositResult{std::move(rho), std::move(weights_list)};
 }
+
