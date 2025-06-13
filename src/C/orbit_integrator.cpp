@@ -1,6 +1,7 @@
 // integrator.cpp
 #include "orbit_integrator.hpp"
 #include <cmath>
+#include <iostream>
 #include <algorithm>
 #include <numeric>
 #include <omp.h>
@@ -193,9 +194,13 @@ StepResult kdk_step(
             vel1[i][d] += 0.5*dt*acc1[i][d];
     auto pos1 = positions0;
     #pragma omp parallel for
-    for(size_t i=0; i<M; ++i)
+    for(size_t i=0; i<M; ++i){
+        // std::cout<<pos1[i][0]<<" "<<pos1[i][1]<<" "<<pos1[i][2]<<"\n";
+        
         for(int d=0; d<3; ++d)
             pos1[i][d] += dt*vel1[i][d];
+        }
+    // std::cout<<"After Update"<<"\n";
     if(solver=="periodic") {
         #pragma omp parallel for
         for(size_t i=0;i<M;++i)
@@ -207,8 +212,11 @@ StepResult kdk_step(
         #pragma omp parallel for
         for(size_t i=0;i<M;++i) {
             keep[i] = true;
+            // std::cout<<pos1[i][0]<<" "<<pos1[i][1]<<" "<<pos1[i][2]<<"\n";
+
             for(int d=0;d<3;++d) {
                 if(pos1[i][d]<0 || pos1[i][d]>=box_size) {
+                    std::cout<<"HI\n";
                     keep[i]=false;
                     break;
                 }
