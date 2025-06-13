@@ -54,6 +54,8 @@ ParticleArray create_plummer_velocities(
     ParticleArray velocities(N);
     std::mt19937 gen(VEL_SEED);
     std::normal_distribution<double> normal(0.0, 1.0);
+    double bulk_vx = bulk_v;
+    double bulk_vy = -bulk_v*3;
 
     double scale = (mode == "stable" ? 1.0 : (mode == "contract" ? 0.5 : (mode == "expand" ? 1.5 : -1.0)));
     if (scale < 0.0) throw std::invalid_argument("Unknown mode: " + mode);
@@ -63,7 +65,7 @@ ParticleArray create_plummer_velocities(
         for (int d = 0; d < 3; ++d) {
             velocities[i][d] = normal(gen) * sigma * scale;
         }
-        if (add_bulk) velocities[i][0] += bulk_v;
+        if (add_bulk) {velocities[i][0] += bulk_vx; velocities[i][1] += bulk_vy;}
     }
     return velocities;
 }
